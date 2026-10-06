@@ -1,0 +1,3 @@
+# PWA icons should be created from a design tool
+# For now, placeholders will work for testing
+# Production: use https://realfavicongenerator.net/
