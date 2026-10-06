@@ -1,5 +1,6 @@
 import {
   addCalendarDays,
+  calendarDateFromUnknown,
   formatCalendarDate,
   getCalendarDateInTimezone,
   getLocalCalendarDate,
@@ -42,8 +43,13 @@ describe('Calendar date storage', () => {
   });
 
   it('getLocalCalendarDate uses the runtime local wall clock', () => {
-    const now = new Date(2026, 9, 5, 22, 30, 0); // local Oct 5 22:30
+    const now = new Date(2026, 9, 5, 22, 30, 0);
     expect(getLocalCalendarDate(now)).toBe('2026-10-05');
+  });
+
+  it('treats extracted diary date Oct 5 as a mismatch against selected Oct 6', () => {
+    expect(calendarDateFromUnknown('2026-10-05')).toBe('2026-10-05');
+    expect(calendarDateFromUnknown('2026-10-05') === '2026-10-06').toBe(false);
   });
 });
 

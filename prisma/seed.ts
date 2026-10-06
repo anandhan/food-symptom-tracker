@@ -2,6 +2,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import { linkFoodItemConcepts, isDrink } from '../lib/ai/food-normalization';
 
 const prisma = new PrismaClient();
 
@@ -110,20 +111,15 @@ async function main() {
       // Create food items
       for (let j = 0; j < foods.length; j++) {
         const foodText = foods[j];
-        await prisma.foodItem.create({
+        const foodItem = await prisma.foodItem.create({
           data: {
             mealId: meal.id,
             rawText: foodText,
             orderIndex: j,
-            isDrink: mealType === 'drinks' || 
-                     foodText.toLowerCase().includes('coffee') ||
-                     foodText.toLowerCase().includes('water') ||
-                     foodText.toLowerCase().includes('juice') ||
-                     foodText.toLowerCase().includes('soda') ||
-                     foodText.toLowerCase().includes('lemonade') ||
-                     foodText.toLowerCase().includes('tea'),
+            isDrink: mealType === 'drinks' || isDrink(foodText),
           },
         });
+        await linkFoodItemConcepts(foodItem.id, foodText);
       }
     }
 

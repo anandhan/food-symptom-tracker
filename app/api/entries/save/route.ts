@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { normalizeFoodItem, isDrink } from '@/lib/ai/food-normalization';
+import { linkFoodItemConcepts, isDrink } from '@/lib/ai/food-normalization';
 import { parseCalendarDate } from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
@@ -96,26 +96,7 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        // Normalize to concepts (fire and forget - don't block on this)
-        normalizeFoodItem(item.text, item.brand)
-          .then(async (normalization) => {
-            for (const concept of normalization.concepts) {
-              await prisma.foodItemConcept.create({
-                data: {
-                  foodItemId: foodItem.id,
-                  foodConceptId: concept.conceptId,
-                  confidence: concept.confidence,
-                  assignedBy: 'ai',
-                },
-              }).catch((err) => {
-                // Ignore duplicate errors
-                if (!err.message.includes('Unique constraint')) {
-                  console.error('Failed to save concept:', err);
-                }
-              });
-            }
-          })
-          .catch((err) => console.error('Normalization failed:', err));
+        await linkFoodItemConcepts(foodItem.id, item.text, item.brand);
       }
     }
 

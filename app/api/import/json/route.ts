@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { validateImportData } from '@/lib/export';
 import { parseCalendarDate } from '@/lib/dates';
+import { linkFoodItemConcepts } from '@/lib/ai/food-normalization';
 
 export async function POST(request: NextRequest) {
   try {
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
 
         // Import food items
         for (const foodItem of meal.foodItems || []) {
-          await prisma.foodItem.create({
+          const created = await prisma.foodItem.create({
             data: {
               mealId: createdMeal.id,
               rawText: foodItem.rawText,
@@ -132,6 +133,7 @@ export async function POST(request: NextRequest) {
               sugar: foodItem.sugar || null,
             },
           });
+          await linkFoodItemConcepts(created.id, foodItem.rawText, foodItem.brand);
         }
       }
 

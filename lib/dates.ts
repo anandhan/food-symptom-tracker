@@ -48,6 +48,18 @@ export function getCalendarDateInTimezone(
   return `${lookup('year')}-${lookup('month')}-${lookup('day')}`;
 }
 
+export function calendarDateFromUnknown(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return formatCalendarDate(value);
+  }
+  if (typeof value === 'string') {
+    const iso = value.match(/(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
+  }
+  return null;
+}
+
 export function addCalendarDays(iso: string, days: number): string {
   const date = parseCalendarDate(iso);
   date.setUTCDate(date.getUTCDate() + days);

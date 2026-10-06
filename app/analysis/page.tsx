@@ -26,18 +26,27 @@ export default async function AnalysisPage({
   const startDate = parseCalendarDate(addCalendarDays(todayIso, -(daysBack - 1)));
 
   // Run analysis
-  const [sameDayResults, nextDayResults, mealBreakdown, totalDays] = await Promise.all([
+  const [sameDayResults, conceptResults, nextDayResults, mealBreakdown, totalDays] = await Promise.all([
     analyzeFoodSymptomCorrelations({
       userId: session.userId,
       startDate,
       endDate,
       lagDays: 0,
+      level: 'item',
+    }),
+    analyzeFoodSymptomCorrelations({
+      userId: session.userId,
+      startDate,
+      endDate,
+      lagDays: 0,
+      level: 'concept',
     }),
     analyzeFoodSymptomCorrelations({
       userId: session.userId,
       startDate,
       endDate,
       lagDays: 1,
+      level: 'concept',
     }),
     getMealTypeBreakdown(session.userId, startDate, endDate),
     prisma.dailyEntry.count({
@@ -48,13 +57,13 @@ export default async function AnalysisPage({
     }),
   ]);
 
-  // Categorize results
-  const problemFoods = sameDayResults.filter(r => r.relativeRisk >= 1.5 && r.label !== 'Not enough data yet');
-  const wellTolerated = sameDayResults.filter(r => r.relativeRisk < 0.8 && r.daysWithFood >= 10);
+  const problemFoods = conceptResults.filter(r => r.relativeRisk >= 1.5 && r.label !== 'Not enough data yet');
+  const wellTolerated = conceptResults.filter(r => r.relativeRisk < 0.8 && r.daysWithFood >= 10);
   const delayed = nextDayResults.filter(r => {
-    const sameDay = sameDayResults.find(s => s.foodConcept === r.foodConcept);
+    const sameDay = conceptResults.find(s => s.foodConcept === r.foodConcept);
     return r.relativeRisk > 1.5 && (!sameDay || sameDay.relativeRisk < r.relativeRisk);
   });
+  const itemProblems = sameDayResults.filter(r => r.relativeRisk >= 1.5 && r.label !== 'Not enough data yet').slice(0, 8);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -83,9 +92,9 @@ export default async function AnalysisPage({
             {/* Problem Foods */}
             <Card>
               <CardHeader>
-                <CardTitle>⚠️ Foods Associated with Bad Days</CardTitle>
+                <CardTitle>Ingredient concepts associated with bad days</CardTitle>
                 <CardDescription>
-                  Foods with higher symptom rates (same-day reactions)
+                  Canonical ingredients (e.g. coffee, milk) rolled up from every matching food line
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -207,6 +216,29 @@ export default async function AnalysisPage({
                     );
                   })}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Logged food names (item level)</CardTitle>
+                <CardDescription>
+                  Same stats using the exact diary line instead of rolled-up ingredients
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {itemProblems.length === 0 ? (
+                  <p className="text-muted-foreground">No strong item-level patterns yet.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {itemProblems.map((food) => (
+                      <li key={food.foodConcept} className="flex justify-between gap-4">
+                        <span>{food.foodConcept}</span>
+                        <span className="text-red-600">{food.relativeRisk.toFixed(1)}x · {food.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </CardContent>
             </Card>
 

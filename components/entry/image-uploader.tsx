@@ -28,31 +28,12 @@ export function ImageUploader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  // Handle paste event
-  useEffect(() => {
-    const handlePaste = async (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
+  const handleFileRef = useRef<(file: File) => Promise<void>>(async () => {});
+  const dailyEntryIdRef = useRef(dailyEntryId);
+  dailyEntryIdRef.current = dailyEntryId;
 
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (file) {
-            await handleFile(file);
-          }
-          break;
-        }
-      }
-    };
-
-    document.addEventListener('paste', handlePaste);
-    return () => document.removeEventListener('paste', handlePaste);
-  }, [dailyEntryId]);
-
-  // Ensure daily entry exists
   const ensureDailyEntry = async (): Promise<string> => {
-    if (dailyEntryId) return dailyEntryId;
+    if (dailyEntryIdRef.current) return dailyEntryIdRef.current;
 
     const response = await fetch('/api/entries/create', {
       method: 'POST',
@@ -68,19 +49,17 @@ export function ImageUploader({
 
     const data = await response.json();
     onDailyEntryCreated(data.dailyEntryId);
+    dailyEntryIdRef.current = data.dailyEntryId;
     return data.dailyEntryId;
   };
 
-  // Handle file upload
   const handleFile = async (file: File) => {
     setIsUploading(true);
     setIsExtracting(false);
 
     try {
-      // Ensure daily entry exists
       const entryId = await ensureDailyEntry();
 
-      // Upload image
       const formData = new FormData();
       formData.append('image', file);
       formData.append('dailyEntryId', entryId);
@@ -98,7 +77,6 @@ export function ImageUploader({
       setUploadedImageUrl(uploadData.url);
       setIsUploading(false);
 
-      // Extract foods
       setIsExtracting(true);
       const extractResponse = await fetch('/api/extract', {
         method: 'POST',
@@ -124,6 +102,38 @@ export function ImageUploader({
       setIsExtracting(false);
     }
   };
+
+  handleFileRef.current = handleFile;
+
+  useEffect(() => {
+    const takeImage = (data: DataTransfer | null): File | null => {
+      if (!data) return null;
+      if (data.files && data.files.length > 0) {
+        const f = data.files[0];
+        if (f.type.startsWith('image/')) return f;
+      }
+      for (const item of data.items || []) {
+        if (item.type.startsWith('image/')) {
+          return item.getAsFile();
+        }
+      }
+      return null;
+    };
+
+    const handlePaste = async (e: ClipboardEvent) => {
+      const file = takeImage(e.clipboardData);
+      if (!file) return;
+      e.preventDefault();
+      await handleFileRef.current(file);
+    };
+
+    window.addEventListener('paste', handlePaste);
+    document.addEventListener('paste', handlePaste);
+    return () => {
+      window.removeEventListener('paste', handlePaste);
+      document.removeEventListener('paste', handlePaste);
+    };
+  }, []);
 
   // Handle file input change
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,6 +167,14 @@ export function ImageUploader({
       <CardContent>
         <div
           ref={dropZoneRef}
+          data-testid="image-dropzone"
+          onPaste={(e) => {
+            const file = e.clipboardData?.files?.[0];
+            if (file?.type.startsWith('image/')) {
+              e.preventDefault();
+              handleFileRef.current(file);
+            }
+          }}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer"

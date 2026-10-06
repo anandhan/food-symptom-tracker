@@ -1,6 +1,6 @@
-// Food normalization service - maps food items to canonical concepts
+// Food normalization: rule-based concepts, persisted to FoodConcept, optional Gemini
 
-import { prisma } from '@/lib/db';
+import { prisma } from '../db';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export interface NormalizationResult {
@@ -11,7 +11,6 @@ export interface NormalizationResult {
   }>;
 }
 
-// Common drink keywords for detection
 const DRINK_KEYWORDS = [
   'coffee', 'latte', 'espresso', 'cappuccino', 'mocha', 'americano',
   'tea', 'chai', 'matcha',
@@ -24,138 +23,142 @@ const DRINK_KEYWORDS = [
   'hot chocolate', 'cocoa',
 ];
 
-// Detect if a food item is a drink
 export function isDrink(text: string): boolean {
   const lowerText = text.toLowerCase();
-  return DRINK_KEYWORDS.some(keyword => lowerText.includes(keyword));
+  return DRINK_KEYWORDS.some((keyword) => lowerText.includes(keyword));
 }
 
-// Normalize a food item to canonical concepts using AI + rules
+/** Canonical names inferred from a food line (no DB). */
+export function inferConceptNames(foodText: string, brand?: string): string[] {
+  const lower = `${brand || ''} ${foodText}`.toLowerCase();
+  const names = new Set<string>();
+
+  if (/coffee|latte|espresso|cappuccino|mocha|americano/.test(lower)) names.add('coffee');
+  if (/\bmilk\b|latte|cream|dairy|yogurt|cheese|butter/.test(lower)) names.add('milk');
+  if (/sugar/.test(lower) && !/sugar\s*free/.test(lower)) names.add('sugar');
+  if (/chicken/.test(lower)) names.add('chicken');
+  if (/egg|omelette|omelet|omlette/.test(lower)) names.add('eggs');
+  if (/potato/.test(lower)) names.add('potato');
+  if (/rice|idly|idli/.test(lower)) names.add('rice');
+  if (/oat|granola/.test(lower)) names.add('oats');
+  if (/dumpling|wheat|flour|toast|bagel|bread|pasta|pizza|cracker/.test(lower)) names.add('wheat');
+  if (/metamucil|psyllium|fiber/.test(lower)) names.add('psyllium fiber');
+  if (/coconut/.test(lower)) names.add('coconut');
+  if (/\btea\b|chai/.test(lower)) names.add('tea');
+  if (/tomato/.test(lower)) names.add('tomato');
+  if (/water/.test(lower) && !/coconut/.test(lower)) names.add('water');
+  if (/peanut/.test(lower)) names.add('peanuts');
+  if (/apple/.test(lower)) names.add('apple');
+  if (/banana/.test(lower)) names.add('banana');
+  if (/orange/.test(lower) && !/metamucil/.test(lower)) names.add('orange');
+  if (/quinoa/.test(lower)) names.add('quinoa');
+  if (/turkey/.test(lower)) names.add('turkey');
+  if (/soda|cola/.test(lower)) names.add('soda');
+  if (/honey/.test(lower)) names.add('honey');
+
+  return [...names];
+}
+
+export async function upsertConceptsByName(
+  names: Array<{ name: string; confidence?: number }>
+): Promise<NormalizationResult['concepts']> {
+  const concepts = [];
+  for (const { name, confidence } of names) {
+    const canonical = name.trim().toLowerCase();
+    if (!canonical) continue;
+    const concept = await prisma.foodConcept.upsert({
+      where: { name: canonical },
+      update: {},
+      create: {
+        name: canonical,
+        aliases: JSON.stringify([canonical]),
+        isActive: true,
+      },
+    });
+    const resolved = concept.mergedIntoId
+      ? await prisma.foodConcept.findUnique({ where: { id: concept.mergedIntoId } })
+      : concept;
+    const target = resolved && resolved.isActive ? resolved : concept;
+    concepts.push({
+      conceptId: target.id,
+      conceptName: target.name,
+      confidence: confidence ?? 0.85,
+    });
+  }
+  return concepts;
+}
+
+async function geminiConceptNames(foodText: string, brand?: string): Promise<string[]> {
+  if (!process.env.GEMINI_API_KEY || process.env.VISION_PROVIDER === 'mock') {
+    return [];
+  }
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash',
+      generationConfig: { responseMimeType: 'application/json' },
+    });
+    const result = await model.generateContent(
+      `Normalize this food into core ingredient concepts (not brands).
+Food: ${foodText}
+${brand ? `Brand: ${brand}` : ''}
+Examples: "Dunkin' Donuts - Latte With Sugar" -> coffee, milk, sugar.
+Return JSON: {"concepts":[{"name":"coffee","confidence":0.95}]}`
+    );
+    const parsed = JSON.parse(result.response.text());
+    return (parsed.concepts || []).map((c: { name: string }) => String(c.name).toLowerCase());
+  } catch (error) {
+    console.error('Gemini concept extraction failed:', error);
+    return [];
+  }
+}
+
 export async function normalizeFoodItem(
   foodText: string,
   brand?: string
 ): Promise<NormalizationResult> {
-  try {
-    // Check if we should use AI or mock
-    if (!process.env.GEMINI_API_KEY || process.env.VISION_PROVIDER === 'mock') {
-      return mockNormalization(foodText, brand);
-    }
+  const fromRules = inferConceptNames(foodText, brand);
+  const fromGemini = await geminiConceptNames(foodText, brand);
+  const merged = [...new Set([...fromRules, ...fromGemini])];
+  const names = (merged.length > 0 ? merged : [foodText.split(',')[0].trim().toLowerCase()]).filter(Boolean);
+  const concepts = await upsertConceptsByName(names.map((name) => ({ name, confidence: 0.85 })));
+  return { concepts };
+}
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
+export async function linkFoodItemConcepts(
+  foodItemId: string,
+  foodText: string,
+  brand?: string | null
+): Promise<NormalizationResult> {
+  const result = await normalizeFoodItem(foodText, brand || undefined);
+  for (const concept of result.concepts) {
+    await prisma.foodItemConcept.upsert({
+      where: {
+        foodItemId_foodConceptId: {
+          foodItemId,
+          foodConceptId: concept.conceptId,
+        },
+      },
+      update: { confidence: concept.confidence },
+      create: {
+        foodItemId,
+        foodConceptId: concept.conceptId,
+        confidence: concept.confidence,
+        assignedBy: 'ai',
       },
     });
-
-    const prompt = buildNormalizationPrompt(foodText, brand);
-    const result = await model.generateContent(prompt);
-    const response = JSON.parse(result.response.text());
-
-    // Find or create concepts in database
-    const concepts = await Promise.all(
-      response.concepts.map(async (c: { name: string; confidence: number }) => {
-        const concept = await prisma.foodConcept.upsert({
-          where: { name: c.name.toLowerCase() },
-          update: {},
-          create: {
-            name: c.name.toLowerCase(),
-            aliases: JSON.stringify([c.name.toLowerCase()]),
-          },
-        });
-        return {
-          conceptId: concept.id,
-          conceptName: concept.name,
-          confidence: c.confidence,
-        };
-      })
-    );
-
-    return { concepts };
-  } catch (error) {
-    console.error('Food normalization failed:', error);
-    // Fallback to mock normalization
-    return mockNormalization(foodText, brand);
   }
+  return result;
 }
 
-function buildNormalizationPrompt(foodText: string, brand?: string): string {
-  return `Normalize this food item into its core ingredient concepts.
-
-Food: ${foodText}
-${brand ? `Brand: ${brand}` : ''}
-
-Break down into basic ingredients/concepts. For example:
-- "Dunkin' Donuts - Latte With Sugar" -> coffee, milk, sugar
-- "Starbucks - Espresso & Cream Beverage" -> coffee, cream, sugar
-- "Wellwish - Chicken Dumplings" -> chicken, wheat flour
-- "Metamucil Sugar Free Orange" -> psyllium fiber, artificial sweetener
-- "Nature Valley - Oats & Honey Granola" -> oats, honey, nuts
-- "Homemade - Omelette" -> eggs, possibly cheese, vegetables
-- "Idly" -> rice, lentils
-- "Potato wedge" -> potato, oil
-
-Return canonical ingredient names, not brand names. Be specific but not overly detailed.
-
-Return JSON:
-{
-  "concepts": [
-    {"name": "coffee", "confidence": 0.95},
-    {"name": "milk", "confidence": 0.9},
-    {"name": "sugar", "confidence": 0.85}
-  ]
-}`;
-}
-
-// Mock normalization using rule-based logic
-function mockNormalization(foodText: string, brand?: string): NormalizationResult {
-  const lower = foodText.toLowerCase();
-  const concepts: Array<{ conceptId: string; conceptName: string; confidence: number }> = [];
-
-  // Simple rule-based normalization
-  if (lower.includes('coffee') || lower.includes('latte') || lower.includes('espresso')) {
-    concepts.push({ conceptId: 'mock-coffee', conceptName: 'coffee', confidence: 0.9 });
+export async function backfillAllFoodItemConcepts(): Promise<{ items: number; links: number }> {
+  const items = await prisma.foodItem.findMany({
+    select: { id: true, rawText: true, brand: true },
+  });
+  let links = 0;
+  for (const item of items) {
+    const result = await linkFoodItemConcepts(item.id, item.rawText, item.brand);
+    links += result.concepts.length;
   }
-  if (lower.includes('milk') || lower.includes('latte') || lower.includes('cream')) {
-    concepts.push({ conceptId: 'mock-dairy', conceptName: 'dairy', confidence: 0.8 });
-  }
-  if (lower.includes('sugar') && !lower.includes('sugar free')) {
-    concepts.push({ conceptId: 'mock-sugar', conceptName: 'sugar', confidence: 0.9 });
-  }
-  if (lower.includes('chicken')) {
-    concepts.push({ conceptId: 'mock-chicken', conceptName: 'chicken', confidence: 0.95 });
-  }
-  if (lower.includes('egg') || lower.includes('omelette') || lower.includes('omelet')) {
-    concepts.push({ conceptId: 'mock-eggs', conceptName: 'eggs', confidence: 0.95 });
-  }
-  if (lower.includes('potato')) {
-    concepts.push({ conceptId: 'mock-potato', conceptName: 'potato', confidence: 0.95 });
-  }
-  if (lower.includes('rice') || lower.includes('idly') || lower.includes('idli')) {
-    concepts.push({ conceptId: 'mock-rice', conceptName: 'rice', confidence: 0.9 });
-  }
-  if (lower.includes('oat') || lower.includes('granola')) {
-    concepts.push({ conceptId: 'mock-oats', conceptName: 'oats', confidence: 0.9 });
-  }
-  if (lower.includes('dumpling')) {
-    concepts.push({ conceptId: 'mock-wheat', conceptName: 'wheat', confidence: 0.8 });
-  }
-  if (lower.includes('metamucil') || lower.includes('fiber')) {
-    concepts.push({ conceptId: 'mock-fiber', conceptName: 'psyllium fiber', confidence: 0.9 });
-  }
-  if (lower.includes('coconut water')) {
-    concepts.push({ conceptId: 'mock-coconut', conceptName: 'coconut', confidence: 0.95 });
-  }
-
-  // If no concepts found, use the food name itself as a concept
-  if (concepts.length === 0) {
-    concepts.push({
-      conceptId: 'mock-unknown',
-      conceptName: foodText.split(',')[0].trim().toLowerCase(),
-      confidence: 0.5,
-    });
-  }
-
-  return { concepts };
+  return { items: items.length, links };
 }

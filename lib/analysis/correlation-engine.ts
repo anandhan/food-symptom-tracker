@@ -21,7 +21,22 @@ interface AnalysisOptions {
   userId: string;
   startDate?: Date;
   endDate?: Date;
-  lagDays?: number; // 0 for same-day, 1 for next-day, etc.
+  lagDays?: number;
+  /** Raw food lines vs canonical ingredients (coffee, milk, …). */
+  level?: 'item' | 'concept';
+}
+
+function conceptKeysForItem(item: {
+  rawText: string;
+  foodItemConcepts?: Array<{
+    foodConcept: { name: string; isActive: boolean; mergedIntoId: string | null };
+  }>;
+}): string[] {
+  const names = (item.foodItemConcepts || [])
+    .filter((link) => link.foodConcept?.isActive && !link.foodConcept.mergedIntoId)
+    .map((link) => link.foodConcept.name.toLowerCase());
+  if (names.length > 0) return [...new Set(names)];
+  return [];
 }
 
 function getConfidenceLevel(samples: number): 'low' | 'medium' | 'high' {
@@ -42,7 +57,7 @@ function getLabel(rr: number, confidence: string, samples: number): string {
 export async function analyzeFoodSymptomCorrelations(
   options: AnalysisOptions
 ): Promise<CorrelationResult[]> {
-  const { userId, startDate, endDate, lagDays = 0 } = options;
+  const { userId, startDate, endDate, lagDays = 0, level = 'item' } = options;
 
   // Build date filter
   const dateFilter: any = {};
@@ -58,7 +73,13 @@ export async function analyzeFoodSymptomCorrelations(
     include: {
       meals: {
         include: {
-          foodItems: true,
+          foodItems: {
+            include: {
+              foodItemConcepts: {
+                include: { foodConcept: true },
+              },
+            },
+          },
         },
       },
       symptomRecord: true,
@@ -78,12 +99,16 @@ export async function analyzeFoodSymptomCorrelations(
     const dateKey = formatCalendarDate(entry.date);
     entry.meals.forEach((meal) => {
       meal.foodItems.forEach((item) => {
-        // Normalize food name (lowercase, trim)
-        const foodKey = item.rawText.toLowerCase().trim();
-        if (!foodOccurrences.has(foodKey)) {
-          foodOccurrences.set(foodKey, new Set());
+        const keys =
+          level === 'concept'
+            ? conceptKeysForItem(item)
+            : [item.rawText.toLowerCase().trim()].filter(Boolean);
+        for (const foodKey of keys) {
+          if (!foodOccurrences.has(foodKey)) {
+            foodOccurrences.set(foodKey, new Set());
+          }
+          foodOccurrences.get(foodKey)!.add(dateKey);
         }
-        foodOccurrences.get(foodKey)!.add(dateKey);
       });
     });
   });

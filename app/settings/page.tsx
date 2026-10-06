@@ -9,7 +9,7 @@ import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { ConceptReview } from '@/components/settings/concept-review';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -194,6 +194,18 @@ export default function SettingsPage() {
                 />
                 {isImporting && <p className="text-sm text-blue-600">Importing...</p>}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Food concepts</CardTitle>
+              <CardDescription>
+                Canonical ingredients used in Analysis. Merge duplicates (e.g. dairy → milk).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ConceptReview />
             </CardContent>
           </Card>
 

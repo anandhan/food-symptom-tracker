@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDate, formatDateISO } from '@/lib/utils';
+import { calendarDateFromUnknown } from '@/lib/dates';
 import { ImageUploader } from './image-uploader';
 import { FoodList } from './food-list';
 import { SymptomInput } from './symptom-input';
@@ -87,8 +88,16 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
         setDiarrhea(existingEntry.symptomRecord.diarrhea || false);
         setConstipation(existingEntry.symptomRecord.constipation || false);
       }
+      if (existingEntry.ocrExtractions?.[0]?.extractedDate) {
+        const extracted = calendarDateFromUnknown(existingEntry.ocrExtractions[0].extractedDate);
+        const selected = formatDateISO(selectedDate);
+        if (extracted && extracted !== selected) {
+          setExtractedDate(extracted);
+          setShowDateWarning(true);
+        }
+      }
     }
-  }, [existingEntry]);
+  }, [existingEntry, selectedDate]);
 
   // Handle extraction result
   const handleExtractionComplete = (result: any) => {
@@ -102,10 +111,15 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
 
     setMeals(newMeals);
 
-    // Check if extracted date differs from selected date
-    if (result.extracted_date && result.extracted_date !== date) {
-      setExtractedDate(result.extracted_date);
+    const extracted = calendarDateFromUnknown(
+      result.extracted_date ?? result.extractedDate
+    );
+    const selected = formatDateISO(selectedDate);
+    if (extracted && extracted !== selected) {
+      setExtractedDate(extracted);
       setShowDateWarning(true);
+    } else {
+      setShowDateWarning(false);
     }
   };
 
@@ -207,7 +221,7 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
 
       {/* Date Warning */}
       {showDateWarning && extractedDate && (
-        <Card className="border-yellow-500 bg-yellow-50">
+        <Card className="border-yellow-500 bg-yellow-50" data-testid="date-mismatch-warning">
           <CardContent className="pt-6">
             <p className="text-sm">
               ⚠️ The image appears to be from {extractedDate}, but you're editing {date}.{' '}

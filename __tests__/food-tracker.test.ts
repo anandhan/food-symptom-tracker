@@ -1,6 +1,6 @@
 // Comprehensive tests for food tracker
 
-import { isDrink } from '../lib/ai/food-normalization';
+import { isDrink, inferConceptNames } from '../lib/ai/food-normalization';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -28,17 +28,14 @@ describe('Food Normalization', () => {
     });
   });
 
-  describe('normalizeFoodItem', () => {
-    it('normalizes text to lowercase', () => {
-      const text = 'CHICKEN BREAST';
-      const normalized = text.toLowerCase().trim();
-      expect(normalized).toBe('chicken breast');
+  describe('inferConceptNames', () => {
+    it('maps coffee with milk to coffee + milk', () => {
+      expect(inferConceptNames('Coffee with milk').sort()).toEqual(['coffee', 'milk']);
     });
 
-    it('trims whitespace', () => {
-      const text = '  Coffee with milk  ';
-      const normalized = text.toLowerCase().trim();
-      expect(normalized).toBe('coffee with milk');
+    it('maps Dunkin latte with sugar to coffee, milk, and sugar', () => {
+      const names = inferConceptNames("Dunkin' Donuts - Latte With Sugar", "Dunkin' Donuts");
+      expect(names).toEqual(expect.arrayContaining(['coffee', 'milk', 'sugar']));
     });
   });
 });
