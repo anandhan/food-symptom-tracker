@@ -1,9 +1,11 @@
-// Image upload API endpoint using Vercel Blob
+// Image upload API endpoint with local file storage fallback
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { put } from '@vercel/blob';
 import { prisma } from '@/lib/db';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     let storageKey: string;
-    let blobUrl: string;
+    let publicUrl: string;
 
     // Try Vercel Blob first, fallback to local storage
     if (process.env.BLOB_READ_WRITE_TOKEN) {
@@ -46,17 +48,19 @@ export async function POST(request: NextRequest) {
           token: process.env.BLOB_READ_WRITE_TOKEN,
         });
         storageKey = blob.url;
-        blobUrl = blob.url;
+        publicUrl = blob.url;
       } catch (error) {
-        console.error('Vercel Blob upload failed, using mock:', error);
-        // Mock for development
-        storageKey = `mock://${file.name}`;
-        blobUrl = `http://localhost:3000/api/images/mock/${file.name}`;
+        console.error('Vercel Blob upload failed, using local:', error);
+        // Save locally
+        const { key, url } = await saveLocally(file);
+        storageKey = key;
+        publicUrl = url;
       }
     } else {
-      // Development fallback - store in memory/mock
-      storageKey = `mock://${file.name}`;
-      blobUrl = `http://localhost:3000/api/images/mock/${file.name}`;
+      // Development - save to local uploads directory
+      const { key, url } = await saveLocally(file);
+      storageKey = key;
+      publicUrl = url;
     }
 
     // Save image metadata
@@ -72,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: uploadedImage.id,
-      url: blobUrl,
+      url: publicUrl,
       storageKey,
     });
   } catch (error) {
@@ -82,4 +86,27 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function saveLocally(file: File): Promise<{ key: string; url: string }> {
+  const uploadsDir = join(process.cwd(), 'uploads');
+  
+  // Ensure uploads directory exists
+  try {
+    await mkdir(uploadsDir, { recursive: true });
+  } catch (error) {
+    // Directory may already exist
+  }
+
+  // Generate unique filename
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const filename = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+  const filepath = join(uploadsDir, filename);
+
+  await writeFile(filepath, buffer);
+
+  return {
+    key: `local://${filename}`,
+    url: `/uploads/${filename}`,
+  };
 }
