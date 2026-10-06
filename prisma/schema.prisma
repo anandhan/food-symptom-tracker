@@ -1,11 +1,11 @@
-// Prisma schema for food and symptom tracking - SQLite for local dev
+// Prisma schema for food and symptom tracking
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

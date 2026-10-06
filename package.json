@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "jest",
+    "seed": "tsx prisma/seed.ts",
+    "wipe": "tsx prisma/wipe.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -51,7 +54,9 @@
     "jest": "^30.5.2",
     "postcss": "^8.5.29",
     "prisma": "^5.22.0",
+    "sharp": "^0.35.5",
     "tailwindcss": "^3.4.19",
+    "ts-jest": "^29.4.14",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.15",
     "typescript": "^5"
