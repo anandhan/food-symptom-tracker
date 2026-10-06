@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
         dailyEntryId,
         imageId: imageId || null,
         rawOcrText: extractionResult.raw_ocr_text,
-        extractedData: extractionResult as any,
+        extractedData: JSON.stringify(extractionResult),
         extractedDate: extractionResult.extracted_date 
           ? new Date(extractionResult.extracted_date)
           : null,
