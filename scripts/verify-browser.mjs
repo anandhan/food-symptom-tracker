@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
 
-const BASE = process.env.APP_URL || 'http://127.0.0.1:43123';
+const BASE = process.env.APP_URL || 'http://localhost:43123';
 const OUT = '/opt/cursor/artifacts/screenshots';
 const DOWNLOADS = '/tmp/food-tracker-downloads';
 const FIXTURE =
@@ -27,6 +27,10 @@ const browser = await puppeteer.launch({
 });
 
 const page = await browser.newPage();
+page.on('pageerror', (err) => log(`PAGEERROR ${err.message}`));
+page.on('console', (msg) => {
+  if (msg.type() === 'error') log(`CONSOLE ${msg.text()}`);
+});
 const client = await page.createCDPSession();
 await client.send('Page.setDownloadBehavior', {
   behavior: 'allow',
