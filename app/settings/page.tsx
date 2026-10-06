@@ -9,6 +9,7 @@ import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { ConceptReview } from '@/components/settings/concept-review';
 
 export default function SettingsPage() {

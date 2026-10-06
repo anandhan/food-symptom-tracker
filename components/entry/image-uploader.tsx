@@ -10,7 +10,7 @@ import { formatDateISO } from '@/lib/utils';
 interface ImageUploaderProps {
   dailyEntryId: string | null;
   userId: string;
-  selectedDate: Date;
+  selectedDate: Date | string;
   onExtractionComplete: (result: any) => void;
   onDailyEntryCreated: (id: string) => void;
 }
