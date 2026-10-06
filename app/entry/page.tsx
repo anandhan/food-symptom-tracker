@@ -1,8 +1,7 @@
 // Daily entry page - main data input screen
 
 import { redirect } from 'next/navigation';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { MainNav } from '@/components/main-nav';
 import { EntryForm } from '@/components/entry/entry-form';
@@ -13,7 +12,7 @@ export default async function EntryPage({
 }: {
   searchParams: { date?: string };
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.userId) {
     redirect('/login');

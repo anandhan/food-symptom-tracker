@@ -1,8 +1,7 @@
 // Dashboard/Home page
 
 import { redirect } from 'next/navigation';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +10,7 @@ import { formatDateShort } from '@/lib/utils';
 import { MainNav } from '@/components/main-nav';
 
 export default async function HomePage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.userId) {
     redirect('/login');

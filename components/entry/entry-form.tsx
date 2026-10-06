@@ -192,7 +192,11 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
                   tomorrow.setDate(tomorrow.getDate() + 1);
                   handleDateChange(formatDateISO(tomorrow));
                 }}
-                disabled={formatDateISO(tomorrow) > formatDateISO(new Date())}
+                disabled={(() => {
+                  const tomorrow = new Date(selectedDate);
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  return formatDateISO(tomorrow) > formatDateISO(new Date());
+                })()}
               >
                 Next →
               </Button>

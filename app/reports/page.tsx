@@ -1,13 +1,12 @@
 // Weekly reports page
 
 import { redirect } from 'next/navigation';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default async function ReportsPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.userId) {
     redirect('/login');

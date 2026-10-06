@@ -1,6 +1,6 @@
 // NextAuth configuration with Google OAuth and credentials fallback
 
-import { NextAuthOptions } from 'next-auth';
+import NextAuth, { NextAuthConfig } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
@@ -12,7 +12,7 @@ const allowedEmails = process.env.ALLOWED_EMAILS
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean) || [];
 
-export const authOptions: NextAuthOptions = {
+export const authConfig: NextAuthConfig = {
   providers: [
     // Primary: Google OAuth
     GoogleProvider({
@@ -34,21 +34,21 @@ export const authOptions: NextAuthOptions = {
         }
 
         const user = await prisma.user.findUnique({
-          where: { username: credentials.username },
+          where: { username: credentials.username as string },
         });
 
         if (!user || !user.passwordHash) {
           return null;
         }
 
-        const isValid = await compare(credentials.password, user.passwordHash);
+        const isValid = await compare(credentials.password as string, user.passwordHash);
         if (!isValid) {
           return null;
         }
 
         return {
           id: user.id,
-          email: user.email,
+          email: user.email || '',
           name: user.name,
         };
       },
@@ -118,7 +118,7 @@ export const authOptions: NextAuthOptions = {
 
         if (dbUser) {
           token.userId = dbUser.id;
-          token.email = dbUser.email;
+          token.email = dbUser.email || undefined;
         }
       }
 
@@ -136,3 +136,5 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
+
+export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);

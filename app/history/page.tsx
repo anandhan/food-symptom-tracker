@@ -1,8 +1,7 @@
 // History page - browse and search past entries
 
 import { redirect } from 'next/navigation';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +10,7 @@ import Link from 'next/link';
 import { formatDateShort } from '@/lib/utils';
 
 export default async function HistoryPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.userId) {
     redirect('/login');

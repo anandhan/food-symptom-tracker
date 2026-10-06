@@ -1,0 +1,28 @@
+
+> tmp-scaffold@0.1.0 build
+> next build
+
+▲ Next.js 16.3.8 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.ts took 15ms
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+
+  To migrate automatically, run:
+  npx @next/codemod@canary middleware-to-proxy .
+
+  Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+✓ Compiled successfully in 5.1s
+  Running TypeScript ...
+components/entry/entry-form.tsx(195,41): error TS2304: Cannot find name 'tomorrow'.
+lib/auth.ts(37,20): error TS2322: Type '{}' is not assignable to type 'string'.
+lib/auth.ts(44,39): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(password: string, hash: string): Promise<boolean>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type 'string'.
+  Overload 2 of 2, '(password: string, hash: string, callback?: Callback<boolean> | undefined, progressCallback?: ProgressCallback | undefined): void', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type 'string'.
+lib/auth.ts(121,11): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+Failed to type check.
+
