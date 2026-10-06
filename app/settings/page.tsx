@@ -3,12 +3,105 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleExportJSON = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/export/json');
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `food-tracker-export-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } else {
+        alert('Export failed');
+      }
+    } catch (error) {
+      alert('Export failed');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/export/csv');
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `food-tracker-export-${Date.now()}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } else {
+        alert('Export failed');
+      }
+    } catch (error) {
+      alert('Export failed');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      const confirmed = confirm(
+        `Import ${data.entries?.length || 0} entries? This will overwrite existing data. Continue?`
+      );
+      if (!confirmed) {
+        setIsImporting(false);
+        return;
+      }
+
+      const response = await fetch('/api/import/json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, overwrite: true }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Successfully imported ${result.importedEntries} entries!`);
+        router.refresh();
+      } else {
+        alert('Import failed');
+      }
+    } catch (error) {
+      alert('Import failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -57,19 +150,50 @@ export default function SettingsPage() {
                 Download all your data
               </CardDescription>
             </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Export as JSON</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Complete backup with all data (entries, meals, symptoms, reports)
+                </p>
+                <Button onClick={handleExportJSON} disabled={isExporting}>
+                  {isExporting ? 'Exporting...' : 'Download JSON'}
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Export as CSV</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Spreadsheet format (ZIP with 5 CSV files)
+                </p>
+                <Button onClick={handleExportCSV} disabled={isExporting} variant="outline">
+                  {isExporting ? 'Exporting...' : 'Download CSV (ZIP)'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Data Import */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Data Import</CardTitle>
+              <CardDescription>Restore from a JSON backup</CardDescription>
+            </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground mb-4">
-                Export feature coming soon. Will include:
-              </p>
-              <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                <li>Complete JSON export of all data</li>
-                <li>CSV files per table</li>
-                <li>All uploaded images</li>
-                <li>Import/restore capability</li>
-              </ul>
-              <Button variant="outline" className="mt-4" disabled>
-                Export All Data (Coming Soon)
-              </Button>
+              <div className="space-y-2">
+                <Label htmlFor="import-file">Import JSON Backup</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  ⚠️ Warning: This will overwrite all existing data
+                </p>
+                <Input
+                  id="import-file"
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportJSON}
+                  disabled={isImporting}
+                />
+                {isImporting && <p className="text-sm text-blue-600">Importing...</p>}
+              </div>
             </CardContent>
           </Card>
 

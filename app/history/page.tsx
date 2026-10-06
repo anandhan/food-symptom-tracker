@@ -18,6 +18,7 @@ interface HistoryEntry {
   date: string;
   overallRating: string | null;
   symptomNotes: string;
+  bloating: string | null;
   foodItems: string[];
 }
 

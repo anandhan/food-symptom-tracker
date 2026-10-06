@@ -144,7 +144,7 @@ export const authConfig: NextAuthConfig = {
         
         // For credentials login, user is already from DB
         if (account?.provider === 'credentials') {
-          token.email = user.email;
+          token.email = user.email || undefined;
         }
         
         // For Google login, find user in DB
@@ -167,8 +167,8 @@ export const authConfig: NextAuthConfig = {
       if (token.userId) {
         session.userId = token.userId as string;
       }
-      if (token.email) {
-        session.user.email = token.email as string;
+      if (token.email && typeof token.email === 'string') {
+        session.user.email = token.email;
       }
       return session;
     },

@@ -61,7 +61,7 @@ export async function normalizeFoodItem(
           update: {},
           create: {
             name: c.name.toLowerCase(),
-            aliases: [c.name.toLowerCase()],
+            aliases: JSON.stringify([c.name.toLowerCase()]),
           },
         });
         return {

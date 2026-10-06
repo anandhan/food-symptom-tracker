@@ -183,7 +183,7 @@ export async function GET(request: NextRequest) {
     // Generate ZIP
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
 
-    return new NextResponse(zipBuffer, {
+    return new NextResponse(zipBuffer as any, {
       headers: {
         'Content-Disposition': `attachment; filename="food-tracker-export-${Date.now()}.zip"`,
         'Content-Type': 'application/zip',
