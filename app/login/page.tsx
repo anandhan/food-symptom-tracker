@@ -16,8 +16,6 @@ function LoginFormContent() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showCredentials, setShowCredentials] = useState(false);
-
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError('');
@@ -69,9 +67,7 @@ function LoginFormContent() {
           </div>
         )}
 
-        {!showCredentials ? (
-          <>
-            <Button
+        <Button
               onClick={handleGoogleSignIn}
               disabled={isLoading}
               className="w-full"
@@ -109,15 +105,6 @@ function LoginFormContent() {
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              onClick={() => setShowCredentials(true)}
-              className="w-full"
-            >
-              Sign in with username
-            </Button>
-          </>
-        ) : (
           <form onSubmit={handleCredentialsSignIn} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
@@ -150,16 +137,7 @@ function LoginFormContent() {
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setShowCredentials(false)}
-              className="w-full"
-            >
-              Back to Google sign in
-            </Button>
           </form>
-        )}
       </CardContent>
       <CardFooter className="flex flex-col space-y-2">
         <p className="text-xs text-center text-muted-foreground">

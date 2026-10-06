@@ -13,7 +13,7 @@ import { getCalendarDateInTimezone, getConfiguredTimezone } from '@/lib/dates';
 export default async function EntryPage({
   searchParams,
 }: {
-  searchParams: { date?: string };
+  searchParams: Promise<{ date?: string }> | { date?: string };
 }) {
   const session = await auth();
 
@@ -21,8 +21,9 @@ export default async function EntryPage({
     redirect('/login');
   }
 
+  const params = await Promise.resolve(searchParams);
   const fallback = getCalendarDateInTimezone(new Date(), getConfiguredTimezone());
-  const selectedDate = parseDate(searchParams.date || fallback);
+  const selectedDate = parseDate(params.date || fallback);
 
   const existingEntry = await prisma.dailyEntry.findFirst({
     where: {

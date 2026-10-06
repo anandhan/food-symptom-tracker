@@ -143,6 +143,12 @@ Open [http://localhost:3000](http://localhost:3000).
    GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
    GEMINI_ANALYSIS_MODEL=gemini-2.5-pro
    DATABASE_URL=${POSTGRES_PRISMA_URL}
+   TIMEZONE=America/New_York
+   CRON_SECRET=<random-string>
+   ADMIN_USERNAME=<your-username>
+   ADMIN_PASSWORD_HASH=<from scripts/generate-password-hash.js>
+   ADMIN_EMAIL=you@example.com
+   BLOB_READ_WRITE_TOKEN=<from Vercel Blob store>
    ```
 
 4. **Deploy**
@@ -286,15 +292,17 @@ Set `VISION_PROVIDER=mock` to test without Gemini:
 
 ### v1 (Current - Core Functionality)
 - [x] Daily entry with image upload
-- [x] AI extraction (Gemini vision)
+- [x] AI extraction (Gemini vision + mock)
 - [x] Food normalization
 - [x] Symptom tracking
-- [x] History browsing
+- [x] History search and filters
+- [x] Per-food detail page
+- [x] Analysis (relative risk, lag windows)
+- [x] Weekly reports (manual + cron)
+- [x] JSON / CSV export and JSON import
 - [x] Authentication (Google OAuth + credentials)
+- [x] Calendar-date storage + TIMEZONE for cron
 - [x] Vercel deployment
-- [ ] Basic analysis page
-- [ ] Weekly report generation
-- [ ] Data export
 
 ### v2 (Future Enhancements)
 - [ ] Advanced search and filters

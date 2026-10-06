@@ -11,7 +11,7 @@ import { addCalendarDays, getCalendarDateInTimezone, getConfiguredTimezone, pars
 export default async function AnalysisPage({
   searchParams,
 }: {
-  searchParams: { days?: string };
+  searchParams: Promise<{ days?: string }> | { days?: string };
 }) {
   const session = await auth();
 
@@ -19,8 +19,8 @@ export default async function AnalysisPage({
     redirect('/login');
   }
 
-  // Get date range
-  const daysBack = parseInt(searchParams.days || '30', 10);
+  const params = await Promise.resolve(searchParams);
+  const daysBack = parseInt(params.days || '30', 10);
   const todayIso = getCalendarDateInTimezone(new Date(), getConfiguredTimezone());
   const endDate = parseCalendarDate(todayIso);
   const startDate = parseCalendarDate(addCalendarDays(todayIso, -(daysBack - 1)));

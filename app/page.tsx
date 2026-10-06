@@ -27,7 +27,7 @@ const RATING_EMOJI: Record<string, string> = {
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: { date?: string };
+  searchParams: Promise<{ date?: string }> | { date?: string };
 }) {
   const session = await auth();
 
@@ -35,8 +35,9 @@ export default async function HomePage({
     redirect('/login');
   }
 
+  const params = await Promise.resolve(searchParams);
   const timezone = getConfiguredTimezone();
-  const todayIso = searchParams.date || getCalendarDateInTimezone(new Date(), timezone);
+  const todayIso = params.date || getCalendarDateInTimezone(new Date(), timezone);
 
   const stats = await getDashboardStats(session.userId, todayIso);
   const todayEntry = stats.todayEntry;

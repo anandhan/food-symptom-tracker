@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import JSZip from 'jszip';
 import { formatCalendarDate } from '@/lib/dates';
-import { csvEscape, rowsToCsv } from '@/lib/export';
+import { rowsToCsv } from '@/lib/export';
 
 export async function GET(request: NextRequest) {
   try {

@@ -11,7 +11,7 @@ import { addCalendarDays, formatCalendarDate, formatCalendarDateLong } from '@/l
 export default async function FoodDetailPage({
   searchParams,
 }: {
-  searchParams: { food?: string };
+  searchParams: Promise<{ food?: string }> | { food?: string };
 }) {
   const session = await auth();
 
@@ -19,7 +19,8 @@ export default async function FoodDetailPage({
     redirect('/login');
   }
 
-  const foodName = searchParams.food || '';
+  const params = await Promise.resolve(searchParams);
+  const foodName = params.food || '';
   if (!foodName) {
     redirect('/history');
   }
