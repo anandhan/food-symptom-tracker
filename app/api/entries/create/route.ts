@@ -1,0 +1,49 @@
+// API endpoint to create a daily entry
+
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/db';
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { date } = await request.json();
+    
+    if (!date) {
+      return NextResponse.json({ error: 'Date is required' }, { status: 400 });
+    }
+
+    const entryDate = new Date(date + 'T00:00:00');
+
+    // Check if entry already exists
+    let dailyEntry = await prisma.dailyEntry.findFirst({
+      where: {
+        userId: session.userId,
+        date: entryDate,
+      },
+    });
+
+    // Create if doesn't exist
+    if (!dailyEntry) {
+      dailyEntry = await prisma.dailyEntry.create({
+        data: {
+          userId: session.userId,
+          date: entryDate,
+        },
+      });
+    }
+
+    return NextResponse.json({ dailyEntryId: dailyEntry.id });
+  } catch (error) {
+    console.error('Create entry error:', error);
+    return NextResponse.json(
+      { error: 'Failed to create entry', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
