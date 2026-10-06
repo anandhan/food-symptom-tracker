@@ -1,6 +1,7 @@
 // Comprehensive tests for food tracker
 
 import { isDrink, inferConceptNames } from '../lib/ai/food-normalization';
+import { getVisionProvider } from '../lib/ai/vision-provider';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -36,6 +37,13 @@ describe('Food Normalization', () => {
     it('maps Dunkin latte with sugar to coffee, milk, and sugar', () => {
       const names = inferConceptNames("Dunkin' Donuts - Latte With Sugar", "Dunkin' Donuts");
       expect(names).toEqual(expect.arrayContaining(['coffee', 'milk', 'sugar']));
+    });
+
+    it('maps both diary phrasings onto the same coffee + milk concepts', () => {
+      const homemade = inferConceptNames('coffee with milk');
+      const dunkin = inferConceptNames('Dunkin Latte With Sugar');
+      expect(homemade).toEqual(expect.arrayContaining(['coffee', 'milk']));
+      expect(dunkin).toEqual(expect.arrayContaining(['coffee', 'milk']));
     });
   });
 });
@@ -131,6 +139,20 @@ describe('MyFitnessPal Extraction Parsing', () => {
       
       const exists = fs.existsSync(testFixturePath) || fs.existsSync(uploadsPath);
       expect(exists).toBe(true);
+    });
+  });
+
+  describe('Mock vision provider', () => {
+    it('returns extracted_date 2026-10-05 for the MyFitnessPal fixture', async () => {
+      const prev = process.env.VISION_PROVIDER;
+      process.env.VISION_PROVIDER = 'mock';
+      const provider = getVisionProvider();
+      const result = await provider.extractFoods(
+        '/uploads/c18b5182df197575edc668b4138be7d2b85a2422aca0ec63fe067e18c6085e5c_75d3.png'
+      );
+      expect(result.extracted_date).toBe('2026-10-05');
+      expect(result.breakfast.some((i) => /Latte With Sugar/i.test(i.text))).toBe(true);
+      process.env.VISION_PROVIDER = prev;
     });
   });
 });

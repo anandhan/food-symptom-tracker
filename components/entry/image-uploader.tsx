@@ -109,29 +109,51 @@ export function ImageUploader({
     const takeImage = (data: DataTransfer | null): File | null => {
       if (!data) return null;
       if (data.files && data.files.length > 0) {
-        const f = data.files[0];
-        if (f.type.startsWith('image/')) return f;
+        for (const f of Array.from(data.files)) {
+          if (f.type.startsWith('image/')) return f;
+        }
       }
-      for (const item of data.items || []) {
+      for (const item of Array.from(data.items || [])) {
         if (item.type.startsWith('image/')) {
-          return item.getAsFile();
+          const file = item.getAsFile();
+          if (file) return file;
         }
       }
       return null;
     };
 
+    const readClipboardApi = async (): Promise<File | null> => {
+      if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+        return null;
+      }
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const type = item.types.find((t) => t.startsWith('image/'));
+          if (!type) continue;
+          const blob = await item.getType(type);
+          return new File([blob], 'pasted-image.png', { type: blob.type || type });
+        }
+      } catch (err) {
+        console.warn('clipboard.read failed', err);
+      }
+      return null;
+    };
+
     const handlePaste = async (e: ClipboardEvent) => {
-      const file = takeImage(e.clipboardData);
+      let file = takeImage(e.clipboardData);
+      if (!file) file = await readClipboardApi();
       if (!file) return;
       e.preventDefault();
+      e.stopPropagation();
       await handleFileRef.current(file);
     };
 
-    window.addEventListener('paste', handlePaste);
-    document.addEventListener('paste', handlePaste);
+    window.addEventListener('paste', handlePaste, true);
+    document.addEventListener('paste', handlePaste, true);
     return () => {
-      window.removeEventListener('paste', handlePaste);
-      document.removeEventListener('paste', handlePaste);
+      window.removeEventListener('paste', handlePaste, true);
+      document.removeEventListener('paste', handlePaste, true);
     };
   }, []);
 
@@ -168,9 +190,13 @@ export function ImageUploader({
         <div
           ref={dropZoneRef}
           data-testid="image-dropzone"
+          tabIndex={0}
           onPaste={(e) => {
-            const file = e.clipboardData?.files?.[0];
-            if (file?.type.startsWith('image/')) {
+            const dt = e.clipboardData;
+            const file =
+              (dt?.files && Array.from(dt.files).find((f) => f.type.startsWith('image/'))) ||
+              null;
+            if (file) {
               e.preventDefault();
               handleFileRef.current(file);
             }

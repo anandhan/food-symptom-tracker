@@ -1,6 +1,7 @@
 import {
   addCalendarDays,
   calendarDateFromUnknown,
+  datesMismatch,
   formatCalendarDate,
   getCalendarDateInTimezone,
   getLocalCalendarDate,
@@ -50,6 +51,19 @@ describe('Calendar date storage', () => {
   it('treats extracted diary date Oct 5 as a mismatch against selected Oct 6', () => {
     expect(calendarDateFromUnknown('2026-10-05')).toBe('2026-10-05');
     expect(calendarDateFromUnknown('2026-10-05') === '2026-10-06').toBe(false);
+  });
+
+  it('reads YYYY-MM-DD out of ISO strings that Next.js passes to client components', () => {
+    expect(calendarDateFromUnknown('2026-10-06T00:00:00.000Z')).toBe('2026-10-06');
+  });
+
+  it('datesMismatch is true for the MyFitnessPal fixture vs a different selected day', () => {
+    const live = datesMismatch('2026-10-05', '2026-10-06T00:00:00.000Z');
+    expect(live.mismatch).toBe(true);
+    expect(live.extracted).toBe('2026-10-05');
+    expect(live.selected).toBe('2026-10-06');
+    const same = datesMismatch('2026-10-05', '2026-10-05');
+    expect(same.mismatch).toBe(false);
   });
 });
 

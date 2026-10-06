@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDate, formatDateISO } from '@/lib/utils';
-import { calendarDateFromUnknown } from '@/lib/dates';
+import { calendarDateFromUnknown, datesMismatch } from '@/lib/dates';
 import { ImageUploader } from './image-uploader';
 import { FoodList } from './food-list';
 import { SymptomInput } from './symptom-input';
@@ -17,7 +17,7 @@ import type { FoodEntry } from '@/lib/ai/vision-provider';
 
 interface EntryFormProps {
   userId: string;
-  selectedDate: Date;
+  selectedDate: Date | string;
   existingEntry: any;
 }
 
@@ -25,9 +25,13 @@ interface MealData {
   [key: string]: FoodEntry[];
 }
 
+function toSelectedIso(selectedDate: Date | string): string {
+  return calendarDateFromUnknown(selectedDate) || formatDateISO(selectedDate);
+}
+
 export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProps) {
   const router = useRouter();
-  const [date, setDate] = useState(formatDateISO(selectedDate));
+  const [date, setDate] = useState(() => toSelectedIso(selectedDate));
   const [meals, setMeals] = useState<MealData>({
     breakfast: [],
     lunch: [],
@@ -89,15 +93,21 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
         setConstipation(existingEntry.symptomRecord.constipation || false);
       }
       if (existingEntry.ocrExtractions?.[0]?.extractedDate) {
-        const extracted = calendarDateFromUnknown(existingEntry.ocrExtractions[0].extractedDate);
-        const selected = formatDateISO(selectedDate);
-        if (extracted && extracted !== selected) {
-          setExtractedDate(extracted);
+        const check = datesMismatch(
+          existingEntry.ocrExtractions[0].extractedDate,
+          selectedDate
+        );
+        if (check.mismatch && check.extracted) {
+          setExtractedDate(check.extracted);
           setShowDateWarning(true);
         }
       }
     }
   }, [existingEntry, selectedDate]);
+
+  useEffect(() => {
+    setDate(toSelectedIso(selectedDate));
+  }, [selectedDate]);
 
   // Handle extraction result
   const handleExtractionComplete = (result: any) => {
@@ -111,12 +121,16 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
 
     setMeals(newMeals);
 
-    const extracted = calendarDateFromUnknown(
-      result.extracted_date ?? result.extractedDate
+    const check = datesMismatch(
+      result.extracted_date ?? result.extractedDate,
+      selectedDate
     );
-    const selected = formatDateISO(selectedDate);
-    if (extracted && extracted !== selected) {
-      setExtractedDate(extracted);
+    const vsDateField = datesMismatch(
+      result.extracted_date ?? result.extractedDate,
+      date
+    );
+    if ((check.mismatch || vsDateField.mismatch) && (check.extracted || vsDateField.extracted)) {
+      setExtractedDate(check.extracted || vsDateField.extracted);
       setShowDateWarning(true);
     } else {
       setShowDateWarning(false);
@@ -224,7 +238,7 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
         <Card className="border-yellow-500 bg-yellow-50" data-testid="date-mismatch-warning">
           <CardContent className="pt-6">
             <p className="text-sm">
-              ⚠️ The image appears to be from {extractedDate}, but you're editing {date}.{' '}
+              ⚠️ Date mismatch: the image is from {extractedDate}, but you're editing {date}.{' '}
               <Button
                 variant="link"
                 className="p-0 h-auto"

@@ -242,6 +242,37 @@ export default async function AnalysisPage({
               </CardContent>
             </Card>
 
+            <Card data-testid="concept-coverage">
+              <CardHeader>
+                <CardTitle>Ingredient concept coverage</CardTitle>
+                <CardDescription>
+                  “Coffee with milk” and “Dunkin Latte With Sugar” both count toward coffee and milk
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {conceptResults.length === 0 ? (
+                  <p className="text-muted-foreground">No linked concepts yet. Save an entry to create them.</p>
+                ) : (
+                  <ul className="grid gap-2 md:grid-cols-2 text-sm">
+                    {conceptResults
+                      .slice()
+                      .sort((a, b) => b.daysWithFood - a.daysWithFood)
+                      .slice(0, 16)
+                      .map((food) => (
+                        <li
+                          key={food.foodConcept}
+                          data-testid={`concept-row-${food.foodConcept}`}
+                          className="flex justify-between border rounded-md px-3 py-2"
+                        >
+                          <span className="capitalize">{food.foodConcept}</span>
+                          <span className="text-muted-foreground">{food.daysWithFood} days</span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Important Notes */}
             <Card className="border-blue-200 bg-blue-50">
               <CardHeader>

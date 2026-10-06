@@ -56,8 +56,24 @@ export function calendarDateFromUnknown(value: unknown): string | null {
   if (typeof value === 'string') {
     const iso = value.match(/(\d{4}-\d{2}-\d{2})/);
     if (iso) return iso[1];
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return formatCalendarDate(parsed);
   }
   return null;
+}
+
+/** True when an extracted diary date and the selected entry date are different calendar days. */
+export function datesMismatch(
+  extracted: unknown,
+  selected: unknown
+): { mismatch: boolean; extracted: string | null; selected: string | null } {
+  const extractedDate = calendarDateFromUnknown(extracted);
+  const selectedDate = calendarDateFromUnknown(selected);
+  return {
+    mismatch: Boolean(extractedDate && selectedDate && extractedDate !== selectedDate),
+    extracted: extractedDate,
+    selected: selectedDate,
+  };
 }
 
 export function addCalendarDays(iso: string, days: number): string {

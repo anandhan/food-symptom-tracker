@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/db';
 import { formatCalendarDate } from '@/lib/dates';
+import { inferConceptNames } from '@/lib/ai/food-normalization';
 
 export interface CorrelationResult {
   foodConcept: string;
@@ -28,6 +29,7 @@ interface AnalysisOptions {
 
 function conceptKeysForItem(item: {
   rawText: string;
+  brand?: string | null;
   foodItemConcepts?: Array<{
     foodConcept: { name: string; isActive: boolean; mergedIntoId: string | null };
   }>;
@@ -36,7 +38,7 @@ function conceptKeysForItem(item: {
     .filter((link) => link.foodConcept?.isActive && !link.foodConcept.mergedIntoId)
     .map((link) => link.foodConcept.name.toLowerCase());
   if (names.length > 0) return [...new Set(names)];
-  return [];
+  return inferConceptNames(item.rawText, item.brand || undefined);
 }
 
 function getConfidenceLevel(samples: number): 'low' | 'medium' | 'high' {

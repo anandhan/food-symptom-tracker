@@ -96,8 +96,11 @@ npx prisma generate
 # Run migrations
 npx prisma migrate dev
 
-# (Optional) Seed with sample data
-# npm run seed
+# (Optional) Seed with sample data — also creates/links food concepts
+npm run seed
+
+# Backfill concepts for entries saved before concept linking existed
+npm run backfill-concepts
 ```
 
 ### 4. Run Development Server

@@ -9,6 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 
 // Date formatting utilities (calendar dates stored as UTC midnight)
 import {
+  calendarDateFromUnknown,
   formatCalendarDate,
   formatCalendarDateLong,
   formatCalendarDateShort,
@@ -25,8 +26,10 @@ export function formatDateShort(date: Date | string): string {
   return formatCalendarDateShort(d);
 }
 
-export function formatDateISO(date: Date): string {
-  return formatCalendarDate(date);
+export function formatDateISO(date: Date | string): string {
+  const fromUnknown = calendarDateFromUnknown(date);
+  if (fromUnknown) return fromUnknown;
+  return formatCalendarDate(typeof date === 'string' ? new Date(date) : date);
 }
 
 export function parseDate(dateString: string): Date {

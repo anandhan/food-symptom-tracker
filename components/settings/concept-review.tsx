@@ -56,7 +56,7 @@ export function ConceptReview() {
       <p className="text-sm text-muted-foreground">
         {concepts.length} active concepts. Latte lines and “coffee with milk” both map to coffee + milk.
       </p>
-      <ul className="max-h-48 overflow-auto text-sm space-y-1 border rounded-md p-3 bg-white">
+      <ul className="max-h-48 overflow-auto text-sm space-y-1 border rounded-md p-3 bg-white" data-testid="concept-list">
         {concepts.length === 0 ? (
           <li className="text-muted-foreground">No concepts yet. Save an entry or run the backfill.</li>
         ) : (

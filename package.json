@@ -10,7 +10,8 @@
     "test": "jest",
     "seed": "tsx prisma/seed.ts",
     "wipe": "tsx prisma/wipe.ts",
-    "backfill-concepts": "tsx prisma/backfill-concepts.ts"
+    "backfill-concepts": "tsx prisma/backfill-concepts.ts",
+    "count-concepts": "tsx prisma/count-concepts.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
