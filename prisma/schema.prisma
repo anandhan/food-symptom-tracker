@@ -1,0 +1,244 @@
+// Prisma schema for food and symptom tracking
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table - supports both OAuth and credentials
+model User {
+  id            String   @id @default(cuid())
+  email         String?  @unique
+  username      String?  @unique
+  passwordHash  String?  @map("password_hash")
+  name          String?
+  authProvider  String?  @map("auth_provider") // 'google', 'credentials'
+  googleId      String?  @map("google_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  dailyEntries      DailyEntry[]
+  weeklyReports     WeeklyReport[]
+  analysisSnapshots AnalysisSnapshot[]
+
+  @@map("users")
+}
+
+// Daily entry - one per user per date
+model DailyEntry {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  date      DateTime @db.Date
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meals           Meal[]
+  symptomRecord   SymptomRecord?
+  uploadedImages  UploadedImage[]
+  ocrExtractions  OcrExtraction[]
+
+  @@unique([userId, date])
+  @@index([userId, date])
+  @@map("daily_entries")
+}
+
+// Uploaded images
+model UploadedImage {
+  id               String   @id @default(cuid())
+  dailyEntryId     String   @map("daily_entry_id")
+  storageKey       String   @map("storage_key")
+  mimeType         String?  @map("mime_type")
+  fileSize         Int?     @map("file_size")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+  originalFilename String?  @map("original_filename")
+
+  dailyEntry     DailyEntry      @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
+  ocrExtractions OcrExtraction[]
+
+  @@index([dailyEntryId])
+  @@map("uploaded_images")
+}
+
+// OCR extraction results from AI
+model OcrExtraction {
+  id              String   @id @default(cuid())
+  imageId         String?  @map("image_id")
+  dailyEntryId    String   @map("daily_entry_id")
+  rawOcrText      String?  @db.Text @map("raw_ocr_text")
+  extractedData   Json     @map("extracted_data") // Structured extraction
+  extractedDate   DateTime? @db.Date @map("extracted_date") // Date parsed from image
+  modelName       String   @map("model_name")
+  modelVersion    String?  @map("model_version")
+  confidenceScore Float?   @map("confidence_score")
+  extractedAt     DateTime @default(now()) @map("extracted_at")
+
+  image      UploadedImage? @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  dailyEntry DailyEntry     @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
+
+  @@index([dailyEntryId])
+  @@map("ocr_extractions")
+}
+
+// Meals within a day
+model Meal {
+  id           String   @id @default(cuid())
+  dailyEntryId String   @map("daily_entry_id")
+  mealType     String   @map("meal_type") // breakfast, lunch, dinner, snacks, drinks
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  dailyEntry    DailyEntry      @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
+  foodItems     FoodItem[]
+  symptomEvents SymptomEvent[]
+
+  @@index([dailyEntryId, mealType])
+  @@map("meals")
+}
+
+// Individual food items
+model FoodItem {
+  id         String   @id @default(cuid())
+  mealId     String   @map("meal_id")
+  rawText    String   @map("raw_text") // Exactly as entered/extracted
+  brand      String?  // Extracted brand (e.g., "Dunkin' Donuts")
+  foodName   String?  @map("food_name") // Food name without brand
+  quantity   String?  // e.g., "100 g", "1 serving", "10 oz"
+  orderIndex Int      @default(0) @map("order_index")
+  isDrink    Boolean  @default(false) @map("is_drink") // Tag for drinks analysis
+  
+  // Optional nutrition data (from structured sources like MyFitnessPal)
+  calories   Int?
+  carbs      Float?   // grams
+  fat        Float?   // grams
+  protein    Float?   // grams
+  fiber      Float?   // grams
+  sugar      Float?   // grams
+  
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  meal              Meal               @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  foodItemConcepts  FoodItemConcept[]
+
+  @@index([mealId])
+  @@index([rawText])
+  @@map("food_items")
+}
+
+// Canonical food concepts for normalization
+model FoodConcept {
+  id           String   @id @default(cuid())
+  name         String   @unique // Canonical name: "coffee", "milk", "tomato"
+  category     String?  // Optional: dairy, grain, vegetable, beverage, etc.
+  aliases      String[] // Common variations
+  createdAt    DateTime @default(now()) @map("created_at")
+  mergedIntoId String?  @map("merged_into_id") // If merged with another concept
+  isActive     Boolean  @default(true) @map("is_active")
+
+  mergedInto       FoodConcept?      @relation("MergedConcepts", fields: [mergedIntoId], references: [id])
+  mergedFrom       FoodConcept[]     @relation("MergedConcepts")
+  foodItemConcepts FoodItemConcept[]
+
+  @@index([name])
+  @@map("food_concepts")
+}
+
+// Many-to-many: food items to concepts
+model FoodItemConcept {
+  id            String   @id @default(cuid())
+  foodItemId    String   @map("food_item_id")
+  foodConceptId String   @map("food_concept_id")
+  confidence    Float?   // AI confidence in this mapping
+  assignedBy    String   @map("assigned_by") // 'ai', 'user', 'rule'
+  assignedAt    DateTime @default(now()) @map("assigned_at")
+
+  foodItem    FoodItem    @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+  foodConcept FoodConcept @relation(fields: [foodConceptId], references: [id], onDelete: Cascade)
+
+  @@unique([foodItemId, foodConceptId])
+  @@index([foodItemId])
+  @@index([foodConceptId])
+  @@map("food_item_concepts")
+}
+
+// Symptom records - one per daily entry
+model SymptomRecord {
+  id            String   @id @default(cuid())
+  dailyEntryId  String   @unique @map("daily_entry_id")
+  freeTextNotes String   @db.Text @map("free_text_notes")
+  overallRating String?  @map("overall_rating") // great, good, okay, bad, very_bad
+  bloating      String?  // none, mild, moderate, severe
+  gas           String?
+  crampsPain    String?  @map("cramps_pain")
+  diarrhea      Boolean?
+  constipation  Boolean?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  dailyEntry    DailyEntry     @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
+  symptomEvents SymptomEvent[]
+
+  @@index([dailyEntryId])
+  @@index([overallRating])
+  @@map("symptom_records")
+}
+
+// Individual symptom events with timing
+model SymptomEvent {
+  id               String   @id @default(cuid())
+  symptomRecordId  String   @map("symptom_record_id")
+  mealId           String?  @map("meal_id") // Optional link to meal
+  description      String   @db.VarChar(500)
+  approximateTime  String?  @map("approximate_time") // Time as string (HH:MM or text)
+  severity         String?  // none, mild, moderate, severe
+  symptomType      String   @map("symptom_type") // bloating, gas, cramps, diarrhea, constipation, other
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  symptomRecord SymptomRecord @relation(fields: [symptomRecordId], references: [id], onDelete: Cascade)
+  meal          Meal?         @relation(fields: [mealId], references: [id], onDelete: SetNull)
+
+  @@index([symptomRecordId])
+  @@index([mealId])
+  @@map("symptom_events")
+}
+
+// Weekly reports
+model WeeklyReport {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  startDate        DateTime @db.Date @map("start_date")
+  endDate          DateTime @db.Date @map("end_date")
+  generatedAt      DateTime @default(now()) @map("generated_at")
+  summaryText      String   @db.Text @map("summary_text")
+  observedData     Json     @map("observed_data") // Structured stats
+  aiInterpretation Json     @map("ai_interpretation") // AI insights
+  modelName        String   @map("model_name")
+  modelVersion     String?  @map("model_version")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate])
+  @@map("weekly_reports")
+}
+
+// Analysis snapshots for historical comparison
+model AnalysisSnapshot {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  analysisType   String   @map("analysis_type") // 'food_correlation', 'symptom_trend', etc.
+  dateRangeStart DateTime? @db.Date @map("date_range_start")
+  dateRangeEnd   DateTime? @db.Date @map("date_range_end")
+  results        Json
+  generatedAt    DateTime @default(now()) @map("generated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, analysisType, generatedAt])
+  @@map("analysis_snapshots")
+}
