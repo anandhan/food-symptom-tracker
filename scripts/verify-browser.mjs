@@ -55,7 +55,7 @@ async function shot(name) {
 }
 
 try {
-  await page.goto(`${BASE}/login`, { waitUntil: 'networkidle2', timeout: 30000 });
+  await page.goto(`${BASE}/login`, { waitUntil: 'load', timeout: 30000 });
   await new Promise((r) => setTimeout(r, 2000));
   await shot('01-login.png');
   await page.waitForSelector('#username', { timeout: 15000 });
@@ -67,7 +67,7 @@ try {
   await page.waitForFunction(() => !location.pathname.includes('/login'), { timeout: 20000 });
   log(`LOGIN ok, url=${page.url()}`);
 
-  await page.goto(`${BASE}/`, { waitUntil: 'networkidle2', timeout: 30000 });
+  await page.goto(`${BASE}/`, { waitUntil: 'load', timeout: 30000 });
   await new Promise((r) => setTimeout(r, 1500));
   const dashText = await page.evaluate(() => document.body.innerText);
   log(`DASHBOARD today-line: ${(dashText.match(/Today[^\n]*/)?.[0] || 'NOT FOUND')}`);
@@ -78,7 +78,7 @@ try {
   log(`DASHBOARD has weekly: ${/Latest Weekly Report/i.test(dashText)}`);
   await shot('02-dashboard.png');
 
-  await page.goto(`${BASE}/history`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/history`, { waitUntil: 'load');
   await page.waitForSelector('#food-search', { timeout: 10000 });
   await page.click('#food-search', { clickCount: 3 });
   await page.type('#food-search', 'chicken');
@@ -108,7 +108,7 @@ try {
   log(`HISTORY rating Bad Showing: ${(afterRating.match(/Showing[^\n]*/)?.[0] || '?')}`);
   await shot('05-history-severity-filter.png');
 
-  await page.goto(`${BASE}/food?food=${encodeURIComponent('Coffee')}`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/food?food=${encodeURIComponent('Coffee')}`, { waitUntil: 'load');
   const foodText = await page.evaluate(() => document.body.innerText);
   log(`PER-FOOD has Times Eaten: ${/Times Eaten/i.test(foodText)}`);
   log(`PER-FOOD has same-day: ${/Same-Day Symptom Rate/i.test(foodText)}`);
@@ -116,7 +116,7 @@ try {
   log(`PER-FOOD has comparison: ${/Comparison/i.test(foodText)}`);
   await shot('08-per-food-detail.png');
 
-  await page.goto(`${BASE}/analysis`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/analysis`, { waitUntil: 'load');
   await new Promise((r) => setTimeout(r, 800));
   const analysisText = await page.evaluate(() => document.body.innerText);
   log(`ANALYSIS has concept coverage: ${/Ingredient concept coverage|coffee/i.test(analysisText)}`);
@@ -124,7 +124,7 @@ try {
   log(`ANALYSIS has milk: ${/\bmilk\b/i.test(analysisText)}`);
   await shot('22-analysis-concepts.png');
 
-  await page.goto(`${BASE}/entry?date=2026-10-06`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/entry?date=2026-10-06`, { waitUntil: 'load');
   await new Promise((r) => setTimeout(r, 800));
   log(`EXTRACT url=${page.url()}`);
   const fileInput = await page.$('input[type="file"]');
@@ -158,7 +158,7 @@ try {
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  await page.goto(`${BASE}/settings`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/settings`, { waitUntil: 'load');
   await new Promise((r) => setTimeout(r, 1200));
   const settingsText = await page.evaluate(() => document.body.innerText);
   log(`SETTINGS has concept review: ${/Food concepts|active concepts/i.test(settingsText)}`);
@@ -229,7 +229,7 @@ try {
     log(`SHOT 11-exported-csv.png`);
   }
 
-  await page.goto(`${BASE}/reports`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/reports`, { waitUntil: 'load');
   const genBtn = await page.evaluateHandle(() =>
     [...document.querySelectorAll('button')].find((b) => /Generate/i.test(b.textContent || ''))
   );
@@ -243,7 +243,7 @@ try {
 
   // Cmd/Ctrl+V paste: copy fixture with xclip, paste on a different entry date
   await page.setViewport({ width: 1280, height: 900 });
-  await page.goto(`${BASE}/entry?date=2026-10-04`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/entry?date=2026-10-04`, { waitUntil: 'load');
   await page.waitForSelector('[data-testid="image-dropzone"]', { timeout: 10000 });
   const display = process.env.DISPLAY || ':1';
   try {
@@ -276,7 +276,7 @@ try {
   await shot('24-clipboard-paste.png');
 
   await page.setViewport({ width: 390, height: 844 });
-  await page.goto(`${BASE}/`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/`, { waitUntil: 'load');
   await new Promise((r) => setTimeout(r, 800));
   await shot('06-mobile-view.png');
 } catch (err) {
