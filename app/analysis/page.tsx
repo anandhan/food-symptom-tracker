@@ -6,6 +6,7 @@ import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { analyzeFoodSymptomCorrelations, getMealTypeBreakdown } from '@/lib/analysis/correlation-engine';
 import { prisma } from '@/lib/db';
+import { addCalendarDays, getCalendarDateInTimezone, getConfiguredTimezone, parseCalendarDate } from '@/lib/dates';
 
 export default async function AnalysisPage({
   searchParams,
@@ -20,11 +21,9 @@ export default async function AnalysisPage({
 
   // Get date range
   const daysBack = parseInt(searchParams.days || '30', 10);
-  const endDate = new Date();
-  endDate.setHours(23, 59, 59, 999);
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - daysBack);
-  startDate.setHours(0, 0, 0, 0);
+  const todayIso = getCalendarDateInTimezone(new Date(), getConfiguredTimezone());
+  const endDate = parseCalendarDate(todayIso);
+  const startDate = parseCalendarDate(addCalendarDays(todayIso, -(daysBack - 1)));
 
   // Run analysis
   const [sameDayResults, nextDayResults, mealBreakdown, totalDays] = await Promise.all([

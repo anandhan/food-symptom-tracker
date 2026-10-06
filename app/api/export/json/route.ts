@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { buildExportPayload } from '@/lib/export';
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,13 +56,7 @@ export async function GET(request: NextRequest) {
       orderBy: { startDate: 'asc' },
     });
 
-    const exportData = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      user,
-      entries,
-      weeklyReports,
-    };
+    const exportData = buildExportPayload({ user, entries, weeklyReports });
 
     return NextResponse.json(exportData, {
       headers: {

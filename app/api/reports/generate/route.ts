@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { analyzeFoodSymptomCorrelations } from '@/lib/analysis/correlation-engine';
+import { parseCalendarDate } from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,8 +14,8 @@ export async function POST(request: NextRequest) {
     }
 
     const { startDate: startDateStr, endDate: endDateStr } = await request.json();
-    const startDate = new Date(startDateStr);
-    const endDate = new Date(endDateStr);
+    const startDate = parseCalendarDate(String(startDateStr).slice(0, 10));
+    const endDate = parseCalendarDate(String(endDateStr).slice(0, 10));
 
     // Gather observed data
     const entries = await prisma.dailyEntry.findMany({

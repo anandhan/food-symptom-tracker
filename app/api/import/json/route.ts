@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { validateImportData } from '@/lib/export';
+import { parseCalendarDate } from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,8 +16,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { data, overwrite } = body;
 
-    if (!data || !data.version) {
-      return NextResponse.json({ error: 'Invalid import data' }, { status: 400 });
+    const validation = validateImportData(data);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     // Optionally wipe existing data
@@ -95,7 +98,7 @@ export async function POST(request: NextRequest) {
       const dailyEntry = await prisma.dailyEntry.create({
         data: {
           userId: session.userId,
-          date: new Date(entry.date),
+          date: parseCalendarDate(String(entry.date).slice(0, 10)),
           notes: entry.notes || null,
         },
       });

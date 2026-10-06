@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { formatCalendarDate } from '@/lib/dates';
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
 
       return {
         id: entry.id,
-        date: entry.date.toISOString().split('T')[0],
+        date: formatCalendarDate(entry.date),
         overallRating: entry.symptomRecord?.overallRating || null,
         symptomNotes: entry.symptomRecord?.freeTextNotes || '',
         bloating: entry.symptomRecord?.bloating || null,

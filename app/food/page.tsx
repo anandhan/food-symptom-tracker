@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
+import { addCalendarDays, formatCalendarDate, formatCalendarDateLong } from '@/lib/dates';
 
 export default async function FoodDetailPage({
   searchParams,
@@ -63,7 +64,7 @@ export default async function FoodDetailPage({
   // Next-day symptoms
   const entriesWithDates = entries.map((e) => ({
     ...e,
-    dateStr: e.date.toISOString().split('T')[0],
+    dateStr: formatCalendarDate(e.date),
   }));
 
   const allEntries = await prisma.dailyEntry.findMany({
@@ -73,14 +74,12 @@ export default async function FoodDetailPage({
   });
 
   const allEntriesMap = new Map(
-    allEntries.map((e) => [e.date.toISOString().split('T')[0], e])
+    allEntries.map((e) => [formatCalendarDate(e.date), e])
   );
 
   let nextDaySymptoms = 0;
   entriesWithDates.forEach((entry) => {
-    const date = new Date(entry.dateStr);
-    date.setDate(date.getDate() + 1);
-    const nextDayKey = date.toISOString().split('T')[0];
+    const nextDayKey = addCalendarDays(entry.dateStr, 1);
     const nextEntry = allEntriesMap.get(nextDayKey);
     if (
       nextEntry?.symptomRecord?.overallRating === 'bad' ||
@@ -195,12 +194,7 @@ export default async function FoodDetailPage({
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <p className="font-medium">
-                        {entry.date.toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          month: 'long',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
+                        {formatCalendarDateLong(entry.date)}
                       </p>
                       <p className="text-sm text-muted-foreground mt-1">
                         {entry.symptomRecord?.overallRating
@@ -213,7 +207,7 @@ export default async function FoodDetailPage({
                         </p>
                       )}
                     </div>
-                    <Link href={`/entry?date=${entry.date.toISOString().split('T')[0]}`}>
+                    <Link href={`/entry?date=${formatCalendarDate(entry.date)}`}>
                       <button className="text-sm px-3 py-1 border rounded hover:bg-gray-50">
                         View
                       </button>

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
+import { formatCalendarDateLong, parseCalendarDate } from '@/lib/dates';
 
 interface HistoryEntry {
   id: string;
@@ -262,12 +263,7 @@ export default function HistoryPage() {
                       <span className="text-3xl">{getRatingEmoji(entry.overallRating)}</span>
                       <div>
                         <CardTitle className="text-lg">
-                          {new Date(entry.date).toLocaleDateString('en-US', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                          })}
+                          {formatCalendarDateLong(parseCalendarDate(entry.date))}
                         </CardTitle>
                         <CardDescription>
                           {entry.overallRating ? entry.overallRating.replace('_', ' ') : 'Not rated'}

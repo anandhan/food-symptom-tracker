@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { parseCalendarDate } from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Date is required' }, { status: 400 });
     }
 
-    const entryDate = new Date(date + 'T00:00:00');
+    const entryDate = parseCalendarDate(date);
 
     // Check if entry already exists
     let dailyEntry = await prisma.dailyEntry.findFirst({

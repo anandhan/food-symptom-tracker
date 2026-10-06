@@ -1,6 +1,7 @@
 // Food-symptom correlation analysis engine
 
 import { prisma } from '@/lib/db';
+import { formatCalendarDate } from '@/lib/dates';
 
 export interface CorrelationResult {
   foodConcept: string;
@@ -74,7 +75,7 @@ export async function analyzeFoodSymptomCorrelations(
   const foodOccurrences: Map<string, Set<string>> = new Map(); // food -> set of entry dates
   
   entries.forEach((entry) => {
-    const dateKey = entry.date.toISOString().split('T')[0];
+    const dateKey = formatCalendarDate(entry.date);
     entry.meals.forEach((meal) => {
       meal.foodItems.forEach((item) => {
         // Normalize food name (lowercase, trim)
@@ -102,7 +103,7 @@ export async function analyzeFoodSymptomCorrelations(
         targetEntry.symptomRecord?.crampsPain === 'severe';
       
       if (hasBadSymptoms) {
-        symptomDays.add(entry.date.toISOString().split('T')[0]);
+        symptomDays.add(formatCalendarDate(entry.date));
       }
     }
   });

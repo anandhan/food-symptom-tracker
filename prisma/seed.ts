@@ -64,14 +64,13 @@ async function main() {
     { rating: 'very_bad', text: 'Severe cramping all afternoon. Diarrhea after dinner. Terrible day.' },
   ];
 
-  // Generate 4 weeks of data (28 days)
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - 28);
+  // Generate 4 weeks of calendar dates stored as UTC midnight
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
   for (let i = 0; i < 28; i++) {
-    const date = new Date(startDate);
-    date.setDate(date.getDate() + i);
-    date.setHours(0, 0, 0, 0);
+    const date = new Date(todayUtc);
+    date.setUTCDate(date.getUTCDate() - (27 - i));
 
     // Use meal pattern based on day
     const mealPattern = sampleMeals[i % sampleMeals.length];

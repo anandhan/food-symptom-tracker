@@ -46,16 +46,19 @@ export default function ReportsPage() {
 
   const generateReport = async () => {
     setIsGenerating(true);
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localIso = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
 
     const res = await fetch('/api/reports/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: localIso(start),
+        endDate: localIso(end),
       }),
     });
 

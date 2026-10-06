@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import JSZip from 'jszip';
+import { formatCalendarDate } from '@/lib/dates';
+import { csvEscape, rowsToCsv } from '@/lib/export';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,17 +22,15 @@ export async function GET(request: NextRequest) {
       orderBy: { date: 'asc' },
     });
 
-    const entriesCSV = [
-      ['Date', 'Notes', 'Created At', 'Updated At'].join(','),
-      ...entries.map((e) =>
-        [
-          e.date.toISOString().split('T')[0],
-          `"${(e.notes || '').replace(/"/g, '""')}"`,
-          e.createdAt.toISOString(),
-          e.updatedAt.toISOString(),
-        ].join(',')
-      ),
-    ].join('\n');
+    const entriesCSV = rowsToCsv(
+      ['Date', 'Notes', 'Created At', 'Updated At'],
+      entries.map((e) => [
+        formatCalendarDate(e.date),
+        e.notes || '',
+        e.createdAt.toISOString(),
+        e.updatedAt.toISOString(),
+      ])
+    );
     zip.file('daily_entries.csv', entriesCSV);
 
     // Meals CSV
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       ['Date', 'Meal Type', 'Notes'].join(','),
       ...meals.map((m) =>
         [
-          m.dailyEntry.date.toISOString().split('T')[0],
+          formatCalendarDate(m.dailyEntry.date),
           m.mealType,
           `"${(m.notes || '').replace(/"/g, '""')}"`,
         ].join(',')
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
       ].join(','),
       ...foodItems.map((f) =>
         [
-          f.meal.dailyEntry.date.toISOString().split('T')[0],
+          formatCalendarDate(f.meal.dailyEntry.date),
           f.meal.mealType,
           `"${f.rawText.replace(/"/g, '""')}"`,
           `"${(f.brand || '').replace(/"/g, '""')}"`,
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
       ].join(','),
       ...symptoms.map((s) =>
         [
-          s.dailyEntry.date.toISOString().split('T')[0],
+          formatCalendarDate(s.dailyEntry.date),
           s.overallRating || '',
           `"${(s.freeTextNotes || '').replace(/"/g, '""')}"`,
           s.bloating || '',

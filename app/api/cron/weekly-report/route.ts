@@ -3,6 +3,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { analyzeFoodSymptomCorrelations } from '@/lib/analysis/correlation-engine';
+import {
+  addCalendarDays,
+  getCalendarDateInTimezone,
+  getConfiguredTimezone,
+  parseCalendarDate,
+} from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,9 +39,10 @@ export async function POST(request: NextRequest) {
 
     // Generate reports for each user
     for (const user of users) {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
+      const timezone = getConfiguredTimezone();
+      const todayIso = getCalendarDateInTimezone(new Date(), timezone);
+      const endDate = parseCalendarDate(todayIso);
+      const startDate = parseCalendarDate(addCalendarDays(todayIso, -6));
 
       // Check if they have enough entries
       const entryCount = await prisma.dailyEntry.count({
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
       };
 
       const aiInterpretation = {
-        summary: `Week of ${startDate.toLocaleDateString()}: ${
+        summary: `Week of ${todayIso} (${timezone}): ${
           observedData.goodDays > observedData.badDays ? 'Mostly positive' : 'Mixed'
         } week`,
         patternsThisWeek: problematicFoods.map((f) => `${f.foodConcept} (RR: ${f.relativeRisk.toFixed(1)}x)`),

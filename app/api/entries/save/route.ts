@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { normalizeFoodItem, isDrink } from '@/lib/ai/food-normalization';
+import { parseCalendarDate } from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
       constipation,
     } = body;
 
-    const entryDate = new Date(date + 'T00:00:00');
+    const entryDate = parseCalendarDate(date);
 
     // Create or get daily entry
     let dailyEntry;
