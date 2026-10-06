@@ -284,10 +284,22 @@ export default function HistoryPage() {
                   <div className="space-y-2">
                     <div>
                       <p className="text-sm font-medium">Foods:</p>
-                      <p className="text-sm text-muted-foreground">
-                        {entry.foodItems.slice(0, 5).join(', ')}
-                        {entry.foodItems.length > 5 && ` (+${entry.foodItems.length - 5} more)`}
-                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {entry.foodItems.slice(0, 5).map((food, idx) => (
+                          <Link
+                            key={idx}
+                            href={`/food?food=${encodeURIComponent(food)}`}
+                            className="text-sm text-blue-600 hover:underline"
+                          >
+                            {food}
+                          </Link>
+                        ))}
+                        {entry.foodItems.length > 5 && (
+                          <span className="text-sm text-muted-foreground">
+                            (+{entry.foodItems.length - 5} more)
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {entry.symptomNotes && (
                       <div>
