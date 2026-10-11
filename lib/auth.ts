@@ -1,13 +1,27 @@
 // NextAuth configuration with Google OAuth and credentials fallback.
 // Node-only: Prisma and bcrypt stay here, never imported by proxy.ts.
+// This is the only NextAuth() instance in the app.
 
 import NextAuth from 'next-auth';
+import Google from 'next-auth/providers/google';
 import Credentials from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
 import { prisma } from '@/lib/db';
-import { authConfig } from '@/auth.config';
 
-export { authConfig };
+function normalizeAuthUrlEnv() {
+  for (const key of ['AUTH_URL', 'NEXTAUTH_URL'] as const) {
+    const raw = process.env[key];
+    if (!raw) continue;
+    try {
+      const value = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
+      process.env[key] = new URL(value).origin;
+    } catch {
+      delete process.env[key];
+    }
+  }
+}
+
+normalizeAuthUrlEnv();
 
 function getAllowedEmails() {
   return process.env.ALLOWED_EMAILS
@@ -28,9 +42,21 @@ export function isEmailAllowed(email?: string | null) {
 const allowedEmails = getAllowedEmails();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  ...authConfig,
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  trustHost: true,
+  basePath: '/api/auth',
+  session: {
+    strategy: 'jwt',
+  },
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
   providers: [
-    ...(authConfig.providers ?? []),
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    }),
     Credentials({
       id: 'credentials',
       name: 'Username and Password',

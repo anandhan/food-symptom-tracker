@@ -1,79 +1,60 @@
-// Login page with Google OAuth and credentials fallback
-
-'use client';
-
-import { signIn } from 'next-auth/react';
-import { useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { signInWithCredentials, signInWithGoogle } from '@/app/login/actions';
+import { SubmitButton } from '@/app/login/submit-button';
 
-function LoginFormContent() {
-  const searchParams = useSearchParams();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      await signIn('google', { callbackUrl: '/' });
-    } catch (err) {
-      setError('Failed to sign in with Google');
-      setIsLoading(false);
-    }
-  };
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  OAuthSignin: 'Could not start Google sign-in.',
+  OAuthCallback: 'Google sign-in failed. Try again.',
+  OAuthCreateAccount: 'Could not create an account from Google.',
+  OAuthAccountNotLinked: 'This Google account is not linked to an existing user.',
+  Callback: 'Sign-in callback failed.',
+  AccessDenied: 'Your email is not authorized to access this app.',
+  Configuration: 'Sign-in is misconfigured. Check AUTH_SECRET and Google credentials.',
+  CredentialsSignin: 'Invalid username or password.',
+  SessionRequired: 'Please sign in to continue.',
+  Default: 'An error occurred during sign in.',
+};
 
-  const handleCredentialsSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
+function loginErrorMessage(code: string) {
+  return AUTH_ERROR_MESSAGES[code] ?? AUTH_ERROR_MESSAGES.Default;
+}
 
-    const result = await signIn('credentials', {
-      username,
-      password,
-      redirect: false,
-    });
-
-    if (result?.error) {
-      setError('Invalid username or password');
-      setIsLoading(false);
-    } else if (result?.ok) {
-      window.location.href = '/';
-    }
-  };
-
-  const errorParam = searchParams?.get('error');
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; callbackUrl?: string }> | { error?: string; callbackUrl?: string };
+}) {
+  const params = await Promise.resolve(searchParams);
+  const errorCode = params.error && params.error !== 'undefined' ? params.error : undefined;
+  const callbackUrl = params.callbackUrl && params.callbackUrl.startsWith('/') && !params.callbackUrl.startsWith('//')
+    ? params.callbackUrl
+    : '/';
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold text-center">
-          Food & Symptom Tracker
-        </CardTitle>
-        <CardDescription className="text-center">
-          Sign in to track your meals and symptoms
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {(error || errorParam) && (
-          <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-md">
-            {error || (errorParam === 'OAuthSignin' 
-              ? 'Your email is not authorized to access this app.'
-              : 'An error occurred during sign in.')}
-          </div>
-        )}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold text-center">
+            Food & Symptom Tracker
+          </CardTitle>
+          <CardDescription className="text-center">
+            Sign in to track your meals and symptoms
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {errorCode && (
+            <div className="bg-destructive/15 text-destructive text-sm p-3 rounded-md">
+              <p>{loginErrorMessage(errorCode)}</p>
+              <p className="mt-1 font-mono text-xs">error={errorCode}</p>
+            </div>
+          )}
 
-        <Button
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="w-full"
-              size="lg"
-            >
-              <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
+          <form action={signInWithGoogle}>
+            <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <SubmitButton className="w-full" size="lg" pendingLabel="Redirecting to Google...">
+              <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   fill="currentColor"
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -92,74 +73,53 @@ function LoginFormContent() {
                 />
               </svg>
               Continue with Google
-            </Button>
+            </SubmitButton>
+          </form>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  Or
-                </span>
-              </div>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
             </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or
+              </span>
+            </div>
+          </div>
 
-          <form onSubmit={handleCredentialsSignIn} className="space-y-4">
+          <form action={signInWithCredentials} className="space-y-4">
+            <input type="hidden" name="callbackUrl" value={callbackUrl} />
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
+                name="username"
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter your username"
                 required
-                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
                 required
-                disabled={isLoading}
               />
             </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Signing in...' : 'Sign in'}
-            </Button>
+            <SubmitButton className="w-full">
+              Sign in
+            </SubmitButton>
           </form>
-      </CardContent>
-      <CardFooter className="flex flex-col space-y-2">
-        <p className="text-xs text-center text-muted-foreground">
-          This is a private application. Access is restricted to authorized email addresses.
-        </p>
-      </CardFooter>
-    </Card>
-  );
-}
-
-export default function LoginPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <Suspense fallback={
-        <Card className="w-full max-w-md">
-          <CardContent className="py-12 text-center">
-            <p>Loading...</p>
-          </CardContent>
-        </Card>
-      }>
-        <LoginFormContent />
-      </Suspense>
+        </CardContent>
+        <CardFooter className="flex flex-col space-y-2">
+          <p className="text-xs text-center text-muted-foreground">
+            This is a private application. Access is restricted to authorized email addresses.
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   );
 }
