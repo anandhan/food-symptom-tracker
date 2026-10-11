@@ -15,7 +15,7 @@ jest.mock('@google/genai', () => ({
 }));
 
 describe('generateContentWithFallback', () => {
-  const sleep = jest.fn(async () => undefined);
+  const sleep = jest.fn(async (_ms: number) => undefined);
 
   beforeEach(() => {
     generateContent.mockReset();
