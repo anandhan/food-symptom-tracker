@@ -77,6 +77,20 @@ describe('extraction error payload', () => {
     expect(classifyUnknownError(new Error('Unexpected token < in JSON')).code).toBe('parse');
     expect(classifyUnknownError(new Error('Payload too large')).code).toBe('size');
   });
+
+  it('classifies high-demand 503s as gemini-busy', () => {
+    const staged = classifyUnknownError(
+      new Error('503 UNAVAILABLE This model is currently experiencing high demand. Please try again later.')
+    );
+    expect(staged.code).toBe('gemini-busy');
+    expect(errorPayload(staged)).toMatchObject({
+      error: 'Gemini is busy right now, try again in a minute',
+      code: 'gemini-busy',
+      status: 503,
+    });
+    expect(errorPayload(staged).detail).toMatch(/high demand/);
+    expect(classifyUnknownError(new Error('429 RESOURCE_EXHAUSTED')).code).toBe('gemini-busy');
+  });
 });
 
 describe('no-Blob-token image path', () => {

@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type MouseEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDateISO } from '@/lib/utils';
@@ -27,12 +27,19 @@ export function ImageUploader({
   const [isExtracting, setIsExtracting] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
+  const [canRetryExtract, setCanRetryExtract] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const handleFileRef = useRef<(file: File) => Promise<void>>(async () => {});
   const dailyEntryIdRef = useRef(dailyEntryId);
   dailyEntryIdRef.current = dailyEntryId;
+  const lastExtractBodyRef = useRef<{
+    imageId?: string;
+    imageUrl?: string;
+    dailyEntryId: string;
+  } | null>(null);
+  const lastFileRef = useRef<File | null>(null);
 
   const ensureDailyEntry = async (): Promise<string> => {
     if (dailyEntryIdRef.current) return dailyEntryIdRef.current;
@@ -60,20 +67,52 @@ export function ImageUploader({
       const data = await response.json();
       const code = typeof data.code === 'string' ? `[${data.code}] ` : '';
       const detail = data.detail || data.error || fallback;
-      return `${code}${detail}`;
+      return `${code}${data.error && data.detail && data.detail !== data.error ? `${data.error} — ${data.detail}` : detail}`;
     } catch {
       return `${fallback} (HTTP ${response.status})`;
     }
   };
 
+  const extractWithBody = async (body: { imageId?: string; imageUrl?: string; dailyEntryId: string }) => {
+    lastExtractBodyRef.current = body;
+    setIsExtracting(true);
+    const extractResponse = await fetch('/api/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!extractResponse.ok) {
+      const data = await extractResponse.json().catch(() => ({} as { code?: string; error?: string; detail?: string }));
+      const retryable = data.code === 'gemini-busy' || data.code === 'timeout';
+      setCanRetryExtract(retryable && Boolean(lastExtractBodyRef.current || lastFileRef.current));
+      const detail = data.detail && data.detail !== data.error ? ` — ${data.detail}` : '';
+      const code = typeof data.code === 'string' ? `[${data.code}] ` : '';
+      throw new Error(
+        data.code === 'gemini-busy'
+          ? `${data.error || 'Gemini is busy right now, try again in a minute'}${detail}`
+          : `${code}${data.error || data.detail || 'Extraction failed'}${detail}`
+      );
+    }
+    const extractData = await extractResponse.json();
+    if (extractData.model) {
+      console.log(`[extract] used model=${extractData.model}`);
+    }
+    onExtractionComplete(extractData.result);
+    setIsExtracting(false);
+    setCanRetryExtract(false);
+  };
+
   const handleFile = async (file: File) => {
+    lastFileRef.current = file;
     setIsUploading(true);
     setIsExtracting(false);
     setProcessError(null);
+    setCanRetryExtract(false);
 
     try {
       const entryId = await ensureDailyEntry();
       const compressed = await compressImageForUpload(file);
+      lastFileRef.current = compressed;
       if (compressed.size > 4 * 1024 * 1024) {
         throw new Error(
           `[size] Compressed image is still ${compressed.size} bytes. Try a smaller screenshot.`
@@ -97,30 +136,38 @@ export function ImageUploader({
       setUploadedImageUrl(uploadData.url?.startsWith('data:') ? 'inline' : uploadData.url);
       setIsUploading(false);
 
-      setIsExtracting(true);
-      const extractResponse = await fetch('/api/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageId: uploadData.id,
-          imageUrl: uploadData.url,
-          dailyEntryId: entryId,
-        }),
+      await extractWithBody({
+        imageId: uploadData.id,
+        imageUrl: uploadData.url,
+        dailyEntryId: entryId,
       });
-
-      if (!extractResponse.ok) {
-        throw new Error(await readApiError(extractResponse, 'Extraction failed'));
-      }
-
-      const extractData = await extractResponse.json();
-      onExtractionComplete(extractData.result);
-      setIsExtracting(false);
     } catch (error) {
       console.error('Upload/extraction error:', error);
       const message =
         error instanceof Error ? error.message : 'Failed to process image. Please enter foods manually.';
       setProcessError(message);
       setIsUploading(false);
+      setIsExtracting(false);
+    }
+  };
+
+  const retryLastExtract = async (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setProcessError(null);
+    setCanRetryExtract(false);
+    try {
+      if (lastExtractBodyRef.current) {
+        await extractWithBody(lastExtractBodyRef.current);
+        return;
+      }
+      if (lastFileRef.current) {
+        await handleFile(lastFileRef.current);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to process image. Please enter foods manually.';
+      setProcessError(message);
       setIsExtracting(false);
     }
   };
@@ -238,9 +285,21 @@ export function ImageUploader({
             <div className="space-y-3 text-left">
               <p className="text-destructive font-medium">Could not process image</p>
               <p className="text-sm text-destructive/90 whitespace-pre-wrap">{processError}</p>
-              <Button variant="outline" size="sm">
-                Try another image
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {canRetryExtract && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    data-testid="extract-try-again"
+                    onClick={retryLastExtract}
+                  >
+                    Try again
+                  </Button>
+                )}
+                <Button variant="outline" size="sm">
+                  Try another image
+                </Button>
+              </div>
             </div>
           ) : uploadedImageUrl ? (
             <div className="space-y-2">

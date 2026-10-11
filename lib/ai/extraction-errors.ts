@@ -2,6 +2,7 @@ export type ExtractionStage =
   | 'upload/blob'
   | 'gemini-auth'
   | 'gemini-model'
+  | 'gemini-busy'
   | 'parse'
   | 'size'
   | 'timeout'
@@ -32,6 +33,8 @@ export function statusForStage(code: StageCode): number {
       return 400;
     case 'timeout':
       return 504;
+    case 'gemini-busy':
+      return 503;
     default:
       return 500;
   }
@@ -66,6 +69,24 @@ export function classifyUnknownError(
     lower.includes('no longer available')
   ) {
     return new StageError('gemini-model', 'Gemini model is invalid or unavailable', message);
+  }
+
+  if (
+    /\b503\b/.test(lower) ||
+    /\b429\b/.test(lower) ||
+    lower.includes('unavailable') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('resource exhausted') ||
+    lower.includes('high demand') ||
+    lower.includes('overloaded') ||
+    lower.includes('try again later') ||
+    (/\b500\b/.test(lower) && (lower.includes('internal') || lower.includes('server error')))
+  ) {
+    return new StageError(
+      'gemini-busy',
+      'Gemini is busy right now, try again in a minute',
+      message
+    );
   }
 
   if (

@@ -147,6 +147,7 @@ export async function createAiInterpretation(options: {
       contents: buildInterpretationPrompt(options.snapshot),
       config: { responseMimeType: 'application/json' },
     });
+    console.log(`[analysis] succeeded model=${usedModel}`);
     if (!text.trim()) {
       return persistInterpretation({
         ...options,

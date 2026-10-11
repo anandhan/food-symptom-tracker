@@ -13,6 +13,7 @@ export interface ExtractionResult {
   raw_ocr_text: string;
   confidence: number;
   extracted_date?: string; // Date found in image (YYYY-MM-DD)
+  model?: string;
 }
 
 export interface FoodEntry {
@@ -77,9 +78,10 @@ class GeminiVisionProvider implements VisionProvider {
     const apiKey = process.env.GEMINI_API_KEY;
 
     try {
-      const { text } = await generateContentWithFallback({
+      const { text, model: usedModel } = await generateContentWithFallback({
         apiKey,
         model,
+        requireImageInput: true,
         contents: [
           {
             inlineData: {
@@ -94,7 +96,7 @@ class GeminiVisionProvider implements VisionProvider {
         },
       });
       if (!text) {
-        throw new StageError('parse', 'Gemini returned an empty response', `model=${model}`);
+        throw new StageError('parse', 'Gemini returned an empty response', `model=${usedModel}`);
       }
 
       let extracted: unknown;
@@ -104,7 +106,7 @@ class GeminiVisionProvider implements VisionProvider {
         throw new StageError('parse', 'Gemini returned invalid JSON', text.slice(0, 240));
       }
 
-      return this.normalizeResponse(extracted);
+      return { ...this.normalizeResponse(extracted), model: usedModel };
     } catch (error) {
       console.error('Gemini extraction failed:', error);
       throw classifyUnknownError(error, 'extract');

@@ -92,16 +92,19 @@ export async function POST(request: NextRequest) {
           : null,
         modelName: provider.name,
         modelVersion:
-          provider.name === 'gemini'
+          extractionResult.model ||
+          (provider.name === 'gemini'
             ? resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL)
-            : 'mock',
+            : 'mock'),
         confidenceScore: extractionResult.confidence,
       },
     });
 
+    console.log(`[extract] succeeded model=${extraction.modelVersion}`);
     return NextResponse.json({
       extractionId: extraction.id,
       result: extractionResult,
+      model: extraction.modelVersion,
     });
   } catch (error) {
     console.error('Extraction error:', error);
