@@ -1,73 +1,73 @@
-// Image upload API endpoint with local file storage fallback
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthorizedSession } from '@/lib/auth';
-import { put } from '@vercel/blob';
 import { prisma } from '@/lib/db';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { errorPayload, StageError } from '@/lib/ai/extraction-errors';
+import { MAX_IMAGE_BYTES, storeUploadedImage } from '@/lib/images/store-uploaded-image';
+
+export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
     const session = await getAuthorizedSession();
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'extract', detail: 'Not signed in' },
+        { status: 401 }
+      );
     }
 
-    // Get form data
+    const contentLength = Number(request.headers.get('content-length') || 0);
+    if (contentLength > 4.5 * 1024 * 1024) {
+      throw new StageError(
+        'size',
+        'Upload exceeds the 4.5MB request limit',
+        `Content-Length is ${contentLength} bytes`
+      );
+    }
+
     const formData = await request.formData();
-    const file = formData.get('image') as File;
-    const dailyEntryId = formData.get('dailyEntryId') as string;
+    const file = formData.get('image');
+    const dailyEntryId = formData.get('dailyEntryId');
 
-    if (!file) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+    if (!(file instanceof File)) {
+      return NextResponse.json(
+        { error: 'No image provided', code: 'upload/blob', detail: 'form field "image" was missing' },
+        { status: 400 }
+      );
     }
 
-    if (!dailyEntryId) {
-      return NextResponse.json({ error: 'No dailyEntryId provided' }, { status: 400 });
+    if (typeof dailyEntryId !== 'string' || !dailyEntryId) {
+      return NextResponse.json(
+        { error: 'No dailyEntryId provided', code: 'upload/blob', detail: 'form field "dailyEntryId" was missing' },
+        { status: 400 }
+      );
     }
 
-    // Verify daily entry belongs to user
+    if (file.size > MAX_IMAGE_BYTES) {
+      throw new StageError(
+        'size',
+        'Image is too large',
+        `${file.name || 'image'} is ${file.size} bytes; compress it under 4MB`
+      );
+    }
+
     const dailyEntry = await prisma.dailyEntry.findUnique({
       where: { id: dailyEntryId },
     });
 
     if (!dailyEntry || dailyEntry.userId !== session.userId) {
-      return NextResponse.json({ error: 'Invalid daily entry' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Invalid daily entry', code: 'upload/blob', detail: 'Entry not found for this user' },
+        { status: 403 }
+      );
     }
 
-    let storageKey: string;
-    let publicUrl: string;
+    const stored = await storeUploadedImage(file);
 
-    // Try Vercel Blob first, fallback to local storage
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      try {
-        const blob = await put(file.name, file, {
-          access: 'public',
-          token: process.env.BLOB_READ_WRITE_TOKEN,
-        });
-        storageKey = blob.url;
-        publicUrl = blob.url;
-      } catch (error) {
-        console.error('Vercel Blob upload failed, using local:', error);
-        // Save locally
-        const { key, url } = await saveLocally(file);
-        storageKey = key;
-        publicUrl = url;
-      }
-    } else {
-      // Development - save to local uploads directory
-      const { key, url } = await saveLocally(file);
-      storageKey = key;
-      publicUrl = url;
-    }
-
-    // Save image metadata
     const uploadedImage = await prisma.uploadedImage.create({
       data: {
         dailyEntryId,
-        storageKey,
+        storageKey: stored.storageKey,
         mimeType: file.type,
         fileSize: file.size,
         originalFilename: file.name,
@@ -76,37 +76,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: uploadedImage.id,
-      url: publicUrl,
-      storageKey,
+      url: stored.url,
+      storageKey: stored.storageKey,
+      storedInBlob: stored.storedInBlob,
+      warning: stored.warning,
     });
   } catch (error) {
     console.error('Upload error:', error);
+    const payload = errorPayload(error, 'upload/blob');
     return NextResponse.json(
-      { error: 'Upload failed', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { error: payload.error, code: payload.code, detail: payload.detail },
+      { status: payload.status }
     );
   }
-}
-
-async function saveLocally(file: File): Promise<{ key: string; url: string }> {
-  const uploadsDir = join(process.cwd(), 'uploads');
-  
-  // Ensure uploads directory exists
-  try {
-    await mkdir(uploadsDir, { recursive: true });
-  } catch (error) {
-    // Directory may already exist
-  }
-
-  // Generate unique filename
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const filename = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-  const filepath = join(uploadsDir, filename);
-
-  await writeFile(filepath, buffer);
-
-  return {
-    key: `local://${filename}`,
-    url: `/uploads/${filename}`,
-  };
 }

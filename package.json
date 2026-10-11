@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@google/genai": "^2.28.0",
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.9.1",
     "@prisma/client": "^5.22.0",

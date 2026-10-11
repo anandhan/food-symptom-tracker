@@ -1,5 +1,9 @@
 // Vision provider interface for food extraction
 
+import { StageError, classifyUnknownError } from '@/lib/ai/extraction-errors';
+import { resolveGeminiModel } from '@/lib/ai/gemini-model';
+import { loadImageBytes } from '@/lib/images/load-image-bytes';
+
 export interface ExtractionResult {
   breakfast: FoodEntry[];
   lunch: FoodEntry[];
@@ -56,71 +60,56 @@ class GeminiVisionProvider implements VisionProvider {
   name = 'gemini';
 
   async extractFoods(imageUrl: string): Promise<ExtractionResult> {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new StageError('gemini-auth', 'Gemini API key is not configured', 'GEMINI_API_KEY is missing');
+    }
+
+    const { bytes, mimeType } = await loadImageBytes(imageUrl);
+    if (bytes.length > 4 * 1024 * 1024) {
+      throw new StageError(
+        'size',
+        'Image is too large for extraction',
+        `Decoded image is ${bytes.length} bytes`
+      );
+    }
+
+    const model = resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL);
+
     try {
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-      const model = genAI.getGenerativeModel({
-        model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash',
-        generationConfig: {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const result = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            inlineData: {
+              mimeType,
+              data: bytes.toString('base64'),
+            },
+          },
+          { text: this.buildExtractionPrompt() },
+        ],
+        config: {
           responseMimeType: 'application/json',
         },
       });
 
-      // Fetch image and convert to base64
-      let imageBuffer: ArrayBuffer;
-      let mimeType: string;
-
-      if (imageUrl.startsWith('/uploads/') || imageUrl.startsWith('local://')) {
-        // Local file - read from disk
-        const fs = await import('fs/promises');
-        const path = await import('path');
-        
-        const filename = imageUrl.replace('/uploads/', '').replace('local://', '');
-        const filepath = path.join(process.cwd(), 'uploads', filename);
-        
-        const buffer = await fs.readFile(filepath);
-        imageBuffer = buffer.buffer;
-        
-        // Guess mime type from extension
-        if (filename.endsWith('.png')) mimeType = 'image/png';
-        else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) mimeType = 'image/jpeg';
-        else if (filename.endsWith('.gif')) mimeType = 'image/gif';
-        else if (filename.endsWith('.webp')) mimeType = 'image/webp';
-        else mimeType = 'image/jpeg';
-      } else {
-        // Remote URL - fetch
-        const imageResponse = await fetch(imageUrl);
-        if (!imageResponse.ok) {
-          throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
-        }
-        
-        imageBuffer = await imageResponse.arrayBuffer();
-        mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
+      const text = result.text;
+      if (!text) {
+        throw new StageError('parse', 'Gemini returned an empty response', `model=${model}`);
       }
-      
-      const base64Image = Buffer.from(imageBuffer).toString('base64');
 
-      const prompt = this.buildExtractionPrompt();
+      let extracted: unknown;
+      try {
+        extracted = JSON.parse(text);
+      } catch {
+        throw new StageError('parse', 'Gemini returned invalid JSON', text.slice(0, 240));
+      }
 
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Image,
-            mimeType,
-          },
-        },
-      ]);
-
-      const text = result.response.text();
-      const extracted = JSON.parse(text);
-
-      // Validate and normalize the response
       return this.normalizeResponse(extracted);
     } catch (error) {
       console.error('Gemini extraction failed:', error);
-      throw new Error(`Food extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw classifyUnknownError(error, 'extract');
     }
   }
 
@@ -238,8 +227,12 @@ class MockVisionProvider implements VisionProvider {
                          imageUrl.includes('c18b5182df197575edc668b4138be7d2b85a2422aca0ec63fe067e18c6085e5c') ||
                          imageUrl.includes('75d3.png');
     
-    // For any image in the uploads folder, return mock data
-    const isUploadsImage = imageUrl.includes('/uploads/') || imageUrl.startsWith('local://');
+    // For any image in the uploads folder or an inline/data URL (no-Blob path), return mock data
+    const isUploadsImage =
+      imageUrl.includes('/uploads/') ||
+      imageUrl.startsWith('local://') ||
+      imageUrl.startsWith('data:') ||
+      imageUrl.startsWith('inline://');
     
     if (isTestFixture || isUploadsImage) {
       console.log('Detected uploaded image - returning comprehensive mock MyFitnessPal data');

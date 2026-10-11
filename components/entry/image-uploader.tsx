@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDateISO } from '@/lib/utils';
+import { compressImageForUpload } from '@/lib/images/compress-client';
 
 interface ImageUploaderProps {
   dailyEntryId: string | null;
@@ -25,6 +26,7 @@ export function ImageUploader({
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [processError, setProcessError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
@@ -53,15 +55,33 @@ export function ImageUploader({
     return data.dailyEntryId;
   };
 
+  const readApiError = async (response: Response, fallback: string) => {
+    try {
+      const data = await response.json();
+      const code = typeof data.code === 'string' ? `[${data.code}] ` : '';
+      const detail = data.detail || data.error || fallback;
+      return `${code}${detail}`;
+    } catch {
+      return `${fallback} (HTTP ${response.status})`;
+    }
+  };
+
   const handleFile = async (file: File) => {
     setIsUploading(true);
     setIsExtracting(false);
+    setProcessError(null);
 
     try {
       const entryId = await ensureDailyEntry();
+      const compressed = await compressImageForUpload(file);
+      if (compressed.size > 4 * 1024 * 1024) {
+        throw new Error(
+          `[size] Compressed image is still ${compressed.size} bytes. Try a smaller screenshot.`
+        );
+      }
 
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('image', compressed);
       formData.append('dailyEntryId', entryId);
 
       const uploadResponse = await fetch('/api/upload', {
@@ -70,11 +90,11 @@ export function ImageUploader({
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Upload failed');
+        throw new Error(await readApiError(uploadResponse, 'Upload failed'));
       }
 
       const uploadData = await uploadResponse.json();
-      setUploadedImageUrl(uploadData.url);
+      setUploadedImageUrl(uploadData.url?.startsWith('data:') ? 'inline' : uploadData.url);
       setIsUploading(false);
 
       setIsExtracting(true);
@@ -89,7 +109,7 @@ export function ImageUploader({
       });
 
       if (!extractResponse.ok) {
-        throw new Error('Extraction failed');
+        throw new Error(await readApiError(extractResponse, 'Extraction failed'));
       }
 
       const extractData = await extractResponse.json();
@@ -97,7 +117,9 @@ export function ImageUploader({
       setIsExtracting(false);
     } catch (error) {
       console.error('Upload/extraction error:', error);
-      alert('Failed to process image. Please try again or enter foods manually.');
+      const message =
+        error instanceof Error ? error.message : 'Failed to process image. Please enter foods manually.';
+      setProcessError(message);
       setIsUploading(false);
       setIsExtracting(false);
     }
@@ -207,11 +229,19 @@ export function ImageUploader({
           onClick={() => fileInputRef.current?.click()}
         >
           {isUploading ? (
-            <p className="text-muted-foreground">Uploading image...</p>
+            <p className="text-muted-foreground">Compressing and uploading image...</p>
           ) : isExtracting ? (
             <p className="text-muted-foreground">
               Extracting foods with AI... This may take a few seconds.
             </p>
+          ) : processError ? (
+            <div className="space-y-3 text-left">
+              <p className="text-destructive font-medium">Could not process image</p>
+              <p className="text-sm text-destructive/90 whitespace-pre-wrap">{processError}</p>
+              <Button variant="outline" size="sm">
+                Try another image
+              </Button>
+            </div>
           ) : uploadedImageUrl ? (
             <div className="space-y-2">
               <p className="text-green-600 font-medium">✓ Image uploaded and processed</p>
