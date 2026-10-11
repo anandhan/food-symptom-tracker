@@ -80,8 +80,8 @@ ALLOWED_EMAILS=your.email@gmail.com
 # Google Gemini AI (optional, defaults to mock)
 VISION_PROVIDER=gemini  # or 'mock' for testing without API key
 GEMINI_API_KEY=<your-gemini-api-key>
-GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
-GEMINI_ANALYSIS_MODEL=gemini-2.5-pro
+GEMINI_EXTRACTION_MODEL=gemini-3.8-flash
+GEMINI_ANALYSIS_MODEL=gemini-3.8-flash
 
 # Vercel Blob (auto-set in production, optional locally)
 # BLOB_READ_WRITE_TOKEN=<vercel-blob-token>
@@ -143,8 +143,8 @@ Open [http://localhost:3000](http://localhost:3000).
    ALLOWED_EMAILS=your.email@gmail.com,another@gmail.com
    VISION_PROVIDER=gemini
    GEMINI_API_KEY=<your-gemini-key>
-   GEMINI_EXTRACTION_MODEL=gemini-2.5-flash
-   GEMINI_ANALYSIS_MODEL=gemini-2.5-pro
+   GEMINI_EXTRACTION_MODEL=gemini-3.8-flash
+   GEMINI_ANALYSIS_MODEL=gemini-3.8-flash
    DATABASE_URL=${POSTGRES_PRISMA_URL}
    TIMEZONE=America/New_York
    CRON_SECRET=<random-string>
@@ -257,8 +257,8 @@ tests/
 ### AI (Optional, fallback to mock)
 - `VISION_PROVIDER` - `gemini` or `mock`
 - `GEMINI_API_KEY` - Get from Google AI Studio
-- `GEMINI_EXTRACTION_MODEL` - Default: `gemini-2.5-flash`
-- `GEMINI_ANALYSIS_MODEL` - Default: `gemini-2.5-pro`
+- `GEMINI_EXTRACTION_MODEL` - Default: `gemini-3.8-flash` (retired `gemini-2.5-*` ids are remapped)
+- `GEMINI_ANALYSIS_MODEL` - Default: `gemini-3.8-flash` (no current Pro equivalent; retired `gemini-2.5-*` ids are remapped)
 
 ### Storage (Auto-set by Vercel)
 - `BLOB_READ_WRITE_TOKEN` - Vercel Blob token

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthorizedSession } from '@/lib/auth';
-import { resolveGeminiModel } from '@/lib/ai/gemini-model';
+import { generateContentWithFallback, resolveGeminiModel } from '@/lib/ai/gemini-model';
 
 export const maxDuration = 30;
 
@@ -23,9 +23,8 @@ export async function GET() {
     gemini = { ok: false, error: 'GEMINI_API_KEY is not set' };
   } else {
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      await ai.models.generateContent({
+      await generateContentWithFallback({
+        apiKey: process.env.GEMINI_API_KEY as string,
         model: geminiModel,
         contents: 'Reply with the single word ok',
       });

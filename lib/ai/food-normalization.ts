@@ -1,7 +1,7 @@
 // Food normalization: rule-based concepts, persisted to FoodConcept, optional Gemini
 
 import { prisma } from '../db';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateContentWithFallback, resolveGeminiModel } from '@/lib/ai/gemini-model';
 
 export interface NormalizationResult {
   concepts: Array<{
@@ -93,19 +93,17 @@ async function geminiConceptNames(foodText: string, brand?: string): Promise<str
     return [];
   }
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash',
-      generationConfig: { responseMimeType: 'application/json' },
-    });
-    const result = await model.generateContent(
-      `Normalize this food into core ingredient concepts (not brands).
+    const { text } = await generateContentWithFallback({
+      apiKey: process.env.GEMINI_API_KEY,
+      model: resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL),
+      contents: `Normalize this food into core ingredient concepts (not brands).
 Food: ${foodText}
 ${brand ? `Brand: ${brand}` : ''}
 Examples: "Dunkin' Donuts - Latte With Sugar" -> coffee, milk, sugar.
-Return JSON: {"concepts":[{"name":"coffee","confidence":0.95}]}`
-    );
-    const parsed = JSON.parse(result.response.text());
+Return JSON: {"concepts":[{"name":"coffee","confidence":0.95}]}`,
+      config: { responseMimeType: 'application/json' },
+    });
+    const parsed = JSON.parse(text);
     return (parsed.concepts || []).map((c: { name: string }) => String(c.name).toLowerCase());
   } catch (error) {
     console.error('Gemini concept extraction failed:', error);

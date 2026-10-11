@@ -226,11 +226,11 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <p className="text-muted-foreground">Extraction Model</p>
-                  <p className="font-medium">gemini-2.5-flash</p>
+                  <p className="font-medium">gemini-3.8-flash</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Analysis Model</p>
-                  <p className="font-medium">gemini-2.5-pro</p>
+                  <p className="font-medium">gemini-3.8-flash</p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-4">

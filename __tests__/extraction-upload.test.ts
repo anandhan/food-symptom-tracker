@@ -1,6 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveGeminiModel, DEFAULT_GEMINI_MODEL } from '@/lib/ai/gemini-model';
+import {
+  resolveGeminiModel,
+  resolveGeminiAnalysisModel,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GEMINI_ANALYSIS_MODEL,
+  isRetiredGeminiModel,
+  isGeminiNotFound,
+} from '@/lib/ai/gemini-model';
 import { classifyUnknownError, errorPayload, StageError } from '@/lib/ai/extraction-errors';
 import { storeUploadedImage } from '@/lib/images/store-uploaded-image';
 import { getVisionProvider } from '@/lib/ai/vision-provider';
@@ -18,17 +25,38 @@ function readFixture(): Buffer {
 }
 
 describe('resolveGeminiModel', () => {
-  it('defaults when unset or invalid', () => {
+  it('defaults when unset or blank', () => {
+    expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.8-flash');
+    expect(DEFAULT_GEMINI_ANALYSIS_MODEL).toBe('gemini-3.8-flash');
     expect(resolveGeminiModel(undefined)).toBe(DEFAULT_GEMINI_MODEL);
     expect(resolveGeminiModel('')).toBe(DEFAULT_GEMINI_MODEL);
     expect(resolveGeminiModel('   ')).toBe(DEFAULT_GEMINI_MODEL);
-    expect(resolveGeminiModel('gpt-4o')).toBe(DEFAULT_GEMINI_MODEL);
-    expect(resolveGeminiModel('not-a-model')).toBe(DEFAULT_GEMINI_MODEL);
   });
 
-  it('keeps valid gemini model ids', () => {
-    expect(resolveGeminiModel('gemini-2.5-flash')).toBe('gemini-2.5-flash');
+  it('passes unknown model ids through as-is', () => {
+    expect(resolveGeminiModel('gpt-4o')).toBe('gpt-4o');
+    expect(resolveGeminiModel('not-a-model')).toBe('not-a-model');
     expect(resolveGeminiModel('gemini-2.0-flash')).toBe('gemini-2.0-flash');
+    expect(resolveGeminiModel('models/gemini-3.8-flash')).toBe('gemini-3.8-flash');
+  });
+
+  it('maps retired gemini-2.5-* ids to the default', () => {
+    expect(isRetiredGeminiModel('gemini-2.5-flash')).toBe(true);
+    expect(isRetiredGeminiModel('models/gemini-2.5-pro')).toBe(true);
+    expect(resolveGeminiModel('gemini-2.5-flash')).toBe(DEFAULT_GEMINI_MODEL);
+    expect(resolveGeminiModel('models/gemini-2.5-pro')).toBe(DEFAULT_GEMINI_MODEL);
+    expect(resolveGeminiAnalysisModel('gemini-2.5-pro')).toBe(DEFAULT_GEMINI_ANALYSIS_MODEL);
+    expect(resolveGeminiAnalysisModel('')).toBe(DEFAULT_GEMINI_ANALYSIS_MODEL);
+  });
+
+  it('detects Gemini NOT_FOUND / retired-model errors', () => {
+    expect(
+      isGeminiNotFound(
+        new Error('This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash')
+      )
+    ).toBe(true);
+    expect(isGeminiNotFound(new Error('404 NOT_FOUND'))).toBe(true);
+    expect(isGeminiNotFound(new Error('API_KEY_INVALID'))).toBe(false);
   });
 });
 

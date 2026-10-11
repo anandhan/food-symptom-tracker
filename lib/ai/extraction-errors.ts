@@ -57,7 +57,8 @@ export function classifyUnknownError(
     lower.includes('not_found') ||
     lower.includes('404') ||
     lower.includes('invalid model') ||
-    lower.includes('unknown model')
+    lower.includes('unknown model') ||
+    lower.includes('no longer available')
   ) {
     return new StageError('gemini-model', 'Gemini model is invalid or unavailable', message);
   }

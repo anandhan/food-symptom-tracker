@@ -1,7 +1,7 @@
 // Vision provider interface for food extraction
 
 import { StageError, classifyUnknownError } from '@/lib/ai/extraction-errors';
-import { resolveGeminiModel } from '@/lib/ai/gemini-model';
+import { generateContentWithFallback, resolveGeminiModel } from '@/lib/ai/gemini-model';
 import { loadImageBytes } from '@/lib/images/load-image-bytes';
 
 export interface ExtractionResult {
@@ -74,11 +74,11 @@ class GeminiVisionProvider implements VisionProvider {
     }
 
     const model = resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL);
+    const apiKey = process.env.GEMINI_API_KEY;
 
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const result = await ai.models.generateContent({
+      const { text } = await generateContentWithFallback({
+        apiKey,
         model,
         contents: [
           {
@@ -93,8 +93,6 @@ class GeminiVisionProvider implements VisionProvider {
           responseMimeType: 'application/json',
         },
       });
-
-      const text = result.text;
       if (!text) {
         throw new StageError('parse', 'Gemini returned an empty response', `model=${model}`);
       }
