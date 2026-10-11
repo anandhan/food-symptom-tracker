@@ -1,7 +1,9 @@
 // Per-food detail page showing history and symptoms
 
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
+import { getAuthorizedSession } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 import { prisma } from '@/lib/db';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,9 +15,9 @@ export default async function FoodDetailPage({
 }: {
   searchParams: Promise<{ food?: string }> | { food?: string };
 }) {
-  const session = await auth();
+  const session = await getAuthorizedSession();
 
-  if (!session?.userId) {
+  if (!session) {
     redirect('/login');
   }
 

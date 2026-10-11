@@ -2,7 +2,9 @@
 
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
-import { auth } from '@/lib/auth';
+import { getAuthorizedSession } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 import { prisma } from '@/lib/db';
 import { MainNav } from '@/components/main-nav';
 import { EntryForm } from '@/components/entry/entry-form';
@@ -15,9 +17,9 @@ export default async function EntryPage({
 }: {
   searchParams: Promise<{ date?: string }> | { date?: string };
 }) {
-  const session = await auth();
+  const session = await getAuthorizedSession();
 
-  if (!session?.userId) {
+  if (!session) {
     redirect('/login');
   }
 

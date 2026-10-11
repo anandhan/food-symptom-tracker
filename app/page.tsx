@@ -2,7 +2,9 @@
 
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
-import { auth } from '@/lib/auth';
+import { getAuthorizedSession } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -29,9 +31,9 @@ export default async function HomePage({
 }: {
   searchParams: Promise<{ date?: string }> | { date?: string };
 }) {
-  const session = await auth();
+  const session = await getAuthorizedSession();
 
-  if (!session?.userId) {
+  if (!session) {
     redirect('/login');
   }
 

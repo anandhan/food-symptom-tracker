@@ -1,7 +1,7 @@
 // Image upload API endpoint with local file storage fallback
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { getAuthorizedSession } from '@/lib/auth';
 import { put } from '@vercel/blob';
 import { prisma } from '@/lib/db';
 import { writeFile, mkdir } from 'fs/promises';
@@ -10,8 +10,8 @@ import { join } from 'path';
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
-    const session = await auth();
-    if (!session?.userId) {
+    const session = await getAuthorizedSession();
+    if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

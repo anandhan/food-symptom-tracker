@@ -1,5 +1,5 @@
 // NextAuth configuration with Google OAuth and credentials fallback.
-// Node-only: Prisma and bcrypt stay here, not in the edge middleware config.
+// Node-only: Prisma and bcrypt stay here, never imported by proxy.ts.
 
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -9,11 +9,23 @@ import { authConfig } from '@/auth.config';
 
 export { authConfig };
 
+function getAllowedEmails() {
+  return process.env.ALLOWED_EMAILS
+    ?.split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean) || [];
+}
+
+export function isEmailAllowed(email?: string | null) {
+  const allowedEmails = getAllowedEmails();
+  if (allowedEmails.length === 0) return true;
+  const normalized = email?.trim().toLowerCase();
+  if (!normalized) return true;
+  return allowedEmails.includes(normalized);
+}
+
 // Parse allowed emails from env var
-const allowedEmails = process.env.ALLOWED_EMAILS
-  ?.split(',')
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean) || [];
+const allowedEmails = getAllowedEmails();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -87,8 +99,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
 
   callbacks: {
-    ...authConfig.callbacks,
-
     async signIn({ user, account }) {
       // For Google OAuth, check email allowlist
       if (account?.provider === 'google') {
@@ -165,3 +175,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+function isNextDynamicRenderError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'digest' in error &&
+    (error as { digest?: string }).digest === 'DYNAMIC_SERVER_USAGE'
+  );
+}
+
+export async function getAuthorizedSession() {
+  try {
+    const session = await auth();
+    if (!session?.userId) return null;
+    if (!isEmailAllowed(session.user?.email)) return null;
+    return session;
+  } catch (error) {
+    if (isNextDynamicRenderError(error)) {
+      throw error;
+    }
+    console.error('getAuthorizedSession failed', error);
+    return null;
+  }
+}

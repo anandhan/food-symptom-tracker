@@ -1,7 +1,9 @@
 // Analysis page - food-symptom correlations
 
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
+import { getAuthorizedSession } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { analyzeFoodSymptomCorrelations, getMealTypeBreakdown } from '@/lib/analysis/correlation-engine';
@@ -13,9 +15,9 @@ export default async function AnalysisPage({
 }: {
   searchParams: Promise<{ days?: string }> | { days?: string };
 }) {
-  const session = await auth();
+  const session = await getAuthorizedSession();
 
-  if (!session?.userId) {
+  if (!session) {
     redirect('/login');
   }
 

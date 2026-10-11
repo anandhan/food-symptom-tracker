@@ -1,15 +1,15 @@
 // API endpoint to save a complete daily entry with meals and symptoms
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { getAuthorizedSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { linkFoodItemConcepts, isDrink } from '@/lib/ai/food-normalization';
 import { parseCalendarDate } from '@/lib/dates';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.userId) {
+    const session = await getAuthorizedSession();
+    if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
