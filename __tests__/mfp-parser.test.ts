@@ -157,7 +157,7 @@ describe('Node Tesseract OCR of the MFP fixture', () => {
     const worker = await createWorker('eng', 1, {
       langPath: langDir,
       gzip: true,
-      cachePath: langDir,
+      cachePath: path.join(process.cwd(), '.next', 'cache', 'tesseract-test'),
       logger: () => {},
     });
     try {
