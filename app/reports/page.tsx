@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { AiInterpretationPanel } from '@/components/analysis/ai-interpretation-panel';
 
 interface WeeklyReport {
   id: string;
@@ -17,6 +18,20 @@ interface WeeklyReport {
   summaryText: string;
   observedData: any;
   aiInterpretation: any;
+  geminiInterpretation?: {
+    id: string;
+    modelId: string;
+    promptVersion: string;
+    inputSnapshotHash: string;
+    createdAt: string;
+    output: {
+      summary: string;
+      patterns: Array<{ concept: string; label: string; citation: string }>;
+      lowSampleFlags: string[];
+      watchNextWeek: string[];
+    } | null;
+    error: string | null;
+  } | null;
 }
 
 export default function ReportsPage() {
@@ -124,77 +139,72 @@ export default function ReportsPage() {
                   ← Back to all reports
                 </Button>
                 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>
-                      Week of {new Date(selectedReport.startDate).toLocaleDateString()} - {new Date(selectedReport.endDate).toLocaleDateString()}
-                    </CardTitle>
-                    <CardDescription>
-                      Generated {new Date(selectedReport.generatedAt).toLocaleDateString()}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <h3 className="font-semibold text-lg mb-2">📊 Observed Data</h3>
-                      <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                        <p>Days tracked: {selectedReport.observedData.daysTracked}/{selectedReport.observedData.totalDaysInPeriod}</p>
-                        <p>Good days: {selectedReport.observedData.goodDays}</p>
-                        <p>Bad days: {selectedReport.observedData.badDays}</p>
-                        <div>
-                          <p className="font-medium mt-2">Top foods:</p>
-                          <ul className="list-disc list-inside text-sm">
-                            {selectedReport.observedData.topFoods.map((f: any) => (
-                              <li key={f.food}>{f.food} ({f.count}x)</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="font-semibold text-lg mb-2">🤖 AI Interpretation</h3>
-                      <div className="space-y-4">
-                        {selectedReport.aiInterpretation.foodsToConsiderReducing?.length > 0 && (
-                          <div>
-                            <p className="font-medium">Foods to consider reducing:</p>
-                            <ul className="list-disc list-inside text-sm">
-                              {selectedReport.aiInterpretation.foodsToConsiderReducing.map((f: any) => (
-                                <li key={f.food}>{f.food} - {f.reason}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {selectedReport.aiInterpretation.foodsAppearingWellTolerated?.length > 0 && (
-                          <div>
-                            <p className="font-medium">Foods appearing well tolerated:</p>
-                            <ul className="list-disc list-inside text-sm">
-                              {selectedReport.aiInterpretation.foodsAppearingWellTolerated.map((f: any) => (
-                                <li key={f.food}>{f.food} - {f.reason}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {selectedReport.aiInterpretation.recommendations?.length > 0 && (
-                          <div>
-                            <p className="font-medium">Recommendations:</p>
-                            <ul className="list-disc list-inside text-sm">
-                              {selectedReport.aiInterpretation.recommendations.map((r: string, i: number) => (
-                                <li key={i}>{r}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <div className="space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>
+                        Week of {new Date(selectedReport.startDate).toLocaleDateString()} - {new Date(selectedReport.endDate).toLocaleDateString()}
+                      </CardTitle>
+                      <CardDescription>
+                        Generated {new Date(selectedReport.generatedAt).toLocaleDateString()}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ObservedReportData observed={selectedReport.observedData} />
+                    </CardContent>
+                  </Card>
+                  <AiInterpretationPanel
+                    interpretation={selectedReport.geminiInterpretation || null}
+                    regenerateEndpoint="/api/reports/interpret"
+                    regenerateBody={{ reportId: selectedReport.id }}
+                  />
+                </div>
               </div>
             )}
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function ObservedReportData({ observed }: { observed: any }) {
+  const daysTracked = observed?.range?.daysTracked ?? observed?.daysTracked ?? 0;
+  const totalDays = observed?.range?.totalDaysInPeriod ?? observed?.totalDaysInPeriod ?? 0;
+  const goodDays = observed?.ratings?.goodDays ?? observed?.goodDays ?? 0;
+  const badDays = observed?.ratings?.badDays ?? observed?.badDays ?? 0;
+  const concepts = Array.isArray(observed?.concepts)
+    ? observed.concepts
+    : Array.isArray(observed?.topFoods)
+      ? observed.topFoods.map((food: { food?: string; concept?: string; count?: number; daysWithFood?: number }) => ({
+          concept: food.concept || food.food,
+          daysWithFood: food.daysWithFood ?? food.count,
+          label: '',
+        }))
+      : [];
+
+  return (
+    <div data-testid="observed-data">
+      <h3 className="font-semibold text-lg mb-2">Observed data</h3>
+      <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+        <p>Days tracked: {daysTracked}/{totalDays}</p>
+        <p>Good days: {goodDays}</p>
+        <p>Bad days: {badDays}</p>
+        {concepts.length > 0 && (
+          <div>
+            <p className="font-medium mt-2">Concepts</p>
+            <ul className="list-disc list-inside text-sm">
+              {concepts.slice(0, 10).map((row: { concept: string; daysWithFood?: number; label?: string }) => (
+                <li key={row.concept}>
+                  {row.concept}
+                  {row.daysWithFood != null ? ` (${row.daysWithFood} days)` : ''}
+                  {row.label ? ` · ${row.label}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

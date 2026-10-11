@@ -22,9 +22,10 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  dailyEntries      DailyEntry[]
-  weeklyReports     WeeklyReport[]
-  analysisSnapshots AnalysisSnapshot[]
+  dailyEntries        DailyEntry[]
+  weeklyReports       WeeklyReport[]
+  analysisSnapshots   AnalysisSnapshot[]
+  aiInterpretations   AiInterpretation[]
 }
 
 // Daily entry - one per user per date
@@ -211,7 +212,8 @@ model WeeklyReport {
   modelName        String
   modelVersion     String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiInterpretations AiInterpretation[]
 
   @@index([userId, startDate])
 }
@@ -229,4 +231,26 @@ model AnalysisSnapshot {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, analysisType, generatedAt])
+}
+
+// Gemini interpretations — stored separately from observed/correlation stats
+model AiInterpretation {
+  id                String   @id @default(cuid())
+  userId            String
+  kind              String
+  weeklyReportId    String?
+  modelId           String
+  promptVersion     String
+  inputSnapshotHash String
+  inputSnapshot     String
+  outputJson        String?
+  error             String?
+  createdAt         DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeklyReport WeeklyReport? @relation(fields: [weeklyReportId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+  @@index([weeklyReportId, createdAt])
+  @@index([inputSnapshotHash])
 }

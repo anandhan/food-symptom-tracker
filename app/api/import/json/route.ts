@@ -81,6 +81,11 @@ export async function POST(request: NextRequest) {
           },
         },
       });
+      await prisma.aiInterpretation.deleteMany({
+        where: {
+          userId: session.userId,
+        },
+      });
       await prisma.weeklyReport.deleteMany({
         where: {
           userId: session.userId,

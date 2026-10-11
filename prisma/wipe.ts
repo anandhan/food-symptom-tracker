@@ -17,6 +17,7 @@ async function main() {
   await prisma.uploadedImage.deleteMany();
   await prisma.dailyEntry.deleteMany();
   await prisma.foodConcept.deleteMany();
+  await prisma.aiInterpretation.deleteMany();
   await prisma.weeklyReport.deleteMany();
   await prisma.analysisSnapshot.deleteMany();
   await prisma.user.deleteMany();

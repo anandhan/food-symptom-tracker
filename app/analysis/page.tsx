@@ -7,6 +7,13 @@ export const dynamic = 'force-dynamic';
 import { MainNav } from '@/components/main-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { analyzeFoodSymptomCorrelations, getMealTypeBreakdown } from '@/lib/analysis/correlation-engine';
+import { buildObservedAnalysisSnapshot } from '@/lib/analysis/observed-snapshot';
+import {
+  createAiInterpretation,
+  latestInterpretation,
+  toPublicInterpretation,
+} from '@/lib/analysis/gemini-interpretation';
+import { AiInterpretationPanel } from '@/components/analysis/ai-interpretation-panel';
 import { prisma } from '@/lib/db';
 import { addCalendarDays, getCalendarDateInTimezone, getConfiguredTimezone, parseCalendarDate } from '@/lib/dates';
 
@@ -67,6 +74,22 @@ export default async function AnalysisPage({
   });
   const itemProblems = sameDayResults.filter(r => r.relativeRisk >= 1.5 && r.label !== 'Not enough data yet').slice(0, 8);
 
+  let interpretation = totalDays >= 10
+    ? await latestInterpretation({ userId: session.userId, kind: 'analysis' })
+    : null;
+  if (totalDays >= 10 && !interpretation) {
+    const snapshot = await buildObservedAnalysisSnapshot({
+      userId: session.userId,
+      startDate,
+      endDate,
+    });
+    interpretation = await createAiInterpretation({
+      userId: session.userId,
+      kind: 'analysis',
+      snapshot,
+    });
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
       <MainNav />
@@ -91,6 +114,7 @@ export default async function AnalysisPage({
           </Card>
         ) : (
           <div className="space-y-6">
+            <h2 className="text-2xl font-semibold">Observed data</h2>
             {/* Problem Foods */}
             <Card>
               <CardHeader>
@@ -274,6 +298,12 @@ export default async function AnalysisPage({
                 )}
               </CardContent>
             </Card>
+
+            <AiInterpretationPanel
+              interpretation={interpretation ? toPublicInterpretation(interpretation) : null}
+              regenerateEndpoint="/api/analysis/interpret"
+              regenerateBody={{ days: daysBack }}
+            />
 
             {/* Important Notes */}
             <Card className="border-blue-200 bg-blue-50">

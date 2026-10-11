@@ -282,7 +282,7 @@ Set `VISION_PROVIDER=mock` to test without Gemini:
 `tests/fixtures/myfitnesspal-example.png` - Sample MyFitnessPal screenshot for testing extraction
 
 ### Saving
-The entry Save button persists raw meals and symptoms in one Postgres transaction (target <2s). Food-concept linking is deterministic (rules only) and runs via `after()` and the weekly cron. Gemini is used only to extract meals from an uploaded/pasted image and, when enabled, for analysis/report interpretation. A retry after a 25s client timeout replaces meals for that date/slot instead of duplicating them.
+The entry Save button persists raw meals and symptoms in one Postgres transaction (target <2s). Food-concept linking is deterministic (rules only) and runs via `after()` and the weekly cron. Gemini is used only to extract meals from an uploaded/pasted image and to interpret already-computed analysis/report stats. Correlation numbers stay deterministic; Gemini output is stored separately and can be regenerated. A retry after a 25s client timeout replaces meals for that date/slot instead of duplicating them.
 
 ## Cost Expectations
 

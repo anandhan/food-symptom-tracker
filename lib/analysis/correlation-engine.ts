@@ -248,3 +248,82 @@ export async function getMealTypeBreakdown(userId: string, startDate?: Date, end
 
   return breakdown;
 }
+
+export type ConceptCombination = {
+  concepts: [string, string];
+  daysTogether: number;
+  daysTogetherWithSymptoms: number;
+  symptomRateTogether: number;
+};
+
+/** Same-day concept pairs that co-occur often enough to mention. */
+export async function analyzeConceptCombinations(
+  options: AnalysisOptions
+): Promise<ConceptCombination[]> {
+  const { userId, startDate, endDate } = options;
+  const dateFilter: Record<string, Date> = {};
+  if (startDate) dateFilter.gte = startDate;
+  if (endDate) dateFilter.lte = endDate;
+
+  const entries = await prisma.dailyEntry.findMany({
+    where: {
+      userId,
+      ...(Object.keys(dateFilter).length > 0 ? { date: dateFilter } : {}),
+    },
+    include: {
+      meals: {
+        include: {
+          foodItems: {
+            include: { foodItemConcepts: { include: { foodConcept: true } } },
+          },
+        },
+      },
+      symptomRecord: true,
+    },
+  });
+
+  const pairDays = new Map<string, { together: number; withSymptoms: number }>();
+
+  for (const entry of entries) {
+    const concepts = new Set<string>();
+    entry.meals.forEach((meal) => {
+      meal.foodItems.forEach((item) => {
+        conceptKeysForItem(item).forEach((name) => concepts.add(name));
+      });
+    });
+    const list = [...concepts].sort();
+    if (list.length < 2) continue;
+
+    const hasBadSymptoms =
+      entry.symptomRecord?.overallRating === 'bad' ||
+      entry.symptomRecord?.overallRating === 'very_bad' ||
+      entry.symptomRecord?.bloating === 'moderate' ||
+      entry.symptomRecord?.bloating === 'severe' ||
+      entry.symptomRecord?.crampsPain === 'moderate' ||
+      entry.symptomRecord?.crampsPain === 'severe';
+
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const key = `${list[i]}||${list[j]}`;
+        const current = pairDays.get(key) || { together: 0, withSymptoms: 0 };
+        current.together += 1;
+        if (hasBadSymptoms) current.withSymptoms += 1;
+        pairDays.set(key, current);
+      }
+    }
+  }
+
+  return [...pairDays.entries()]
+    .map(([key, stats]) => {
+      const [a, b] = key.split('||') as [string, string];
+      return {
+        concepts: [a, b] as [string, string],
+        daysTogether: stats.together,
+        daysTogetherWithSymptoms: stats.withSymptoms,
+        symptomRateTogether: stats.together > 0 ? stats.withSymptoms / stats.together : 0,
+      };
+    })
+    .filter((row) => row.daysTogether >= 3)
+    .sort((a, b) => b.daysTogetherWithSymptoms - a.daysTogetherWithSymptoms || b.daysTogether - a.daysTogether)
+    .slice(0, 8);
+}
