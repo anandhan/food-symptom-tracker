@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Tesseract.js may decompress this beside the self-hosted .gz
+/public/ocr/eng.traineddata
