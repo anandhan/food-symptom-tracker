@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     try {
       console.time('cron:concepts');
-      await linkUnlinkedFoodItemConcepts({ useGemini: false, limit: 200 });
+      await linkUnlinkedFoodItemConcepts({ limit: 200 });
       console.timeEnd('cron:concepts');
     } catch (error) {
       console.error('Cron concept backfill failed:', error);

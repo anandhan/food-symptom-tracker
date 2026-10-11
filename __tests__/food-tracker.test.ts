@@ -1,6 +1,6 @@
 // Comprehensive tests for food tracker
 
-import { isDrink, inferConceptNames } from '../lib/ai/food-normalization';
+import { isDrink, inferConceptNames, singularize, stripBrandAndPortion } from '../lib/ai/food-normalization';
 import { getVisionProvider } from '../lib/ai/vision-provider';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -45,6 +45,36 @@ describe('Food Normalization', () => {
       expect(homemade).toEqual(expect.arrayContaining(['coffee', 'milk']));
       expect(dunkin).toEqual(expect.arrayContaining(['coffee', 'milk']));
     });
+
+    it('strips brand and portion, then singularizes unmatched leftovers', () => {
+      expect(inferConceptNames('Homemade - Omlette, 100 g', 'Homemade')).toEqual(['eggs']);
+      expect(inferConceptNames('Idly - Idly, 200 gram', 'Idly')).toEqual(['rice']);
+      expect(inferConceptNames('Acai Bowl, 12 oz')).toEqual(['acai bowl']);
+    });
+
+    it('does not invent Gemini-only concepts and keeps sugar-free orange fiber off orange/sugar', () => {
+      const names = inferConceptNames(
+        'Metamucil - Metamucil - Sugar Free Orange Smooth, 1 rounded tsp',
+        'Metamucil'
+      );
+      expect(names).toEqual(expect.arrayContaining(['psyllium fiber']));
+      expect(names).not.toContain('orange');
+      expect(names).not.toContain('sugar');
+    });
+
+    it('exposes brand/portion stripping and singularize helpers', () => {
+      expect(stripBrandAndPortion("Dunkin' Donuts - Latte With Sugar - Small, 10 oz", "Dunkin' Donuts")).toBe(
+        'latte with sugar'
+      );
+      expect(singularize('dumplings')).toBe('dumpling');
+      expect(singularize('potatoes')).toBe('potato');
+      expect(singularize('oats')).toBe('oats');
+    });
+  });
+
+  it('has no Gemini import in the normalizer', () => {
+    const src = fs.readFileSync(path.join(process.cwd(), 'lib/ai/food-normalization.ts'), 'utf8');
+    expect(src).not.toMatch(/gemini|generateContent|@google\/genai/i);
   });
 });
 

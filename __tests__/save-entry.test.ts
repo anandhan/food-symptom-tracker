@@ -129,5 +129,16 @@ describe('persistDailyEntry against Postgres', () => {
     expect(itemCount).toBe(first.foodItemIds.length);
     expect(itemCount).toBe(second.foodItemIds.length);
     expect(itemCount).toBeGreaterThanOrEqual(8);
+
+    const stored = await prisma.foodItem.findMany({
+      where: { meal: { dailyEntryId: first.dailyEntryId } },
+      select: { rawText: true },
+    });
+    const rawTexts = stored.map((row) => row.rawText).sort();
+    const fixtureTexts = Object.values(meals)
+      .flat()
+      .map((item) => item.text)
+      .sort();
+    expect(rawTexts).toEqual(fixtureTexts);
   });
 });

@@ -1,7 +1,6 @@
-// Food normalization: rule-based concepts, persisted to FoodConcept, optional Gemini
+// Food normalization: deterministic rules only. Raw food text is never rewritten.
 
 import { prisma } from '../db';
-import { generateContentWithFallback, resolveGeminiModel } from '@/lib/ai/gemini-model';
 
 export interface NormalizationResult {
   concepts: Array<{
@@ -23,40 +22,202 @@ const DRINK_KEYWORDS = [
   'hot chocolate', 'cocoa',
 ];
 
+const UNCOUNTABLE = new Set([
+  'oats', 'rice', 'milk', 'eggs', 'wheat', 'sugar', 'water', 'coffee', 'tea',
+  'chicken', 'turkey', 'quinoa', 'honey', 'soda', 'fiber', 'psyllium',
+]);
+
+const STOP_WORDS = new Set([
+  'with', 'and', 'the', 'a', 'an', 'of', 'in', 'for', 'to', 'or', '&',
+  'homemade', 'style', 'recipe',
+]);
+
+/** Synonym / misspelling -> canonical concept. */
+export const CONCEPT_ALIASES: Record<string, string> = {
+  omlette: 'eggs',
+  omelet: 'eggs',
+  omelette: 'eggs',
+  egg: 'eggs',
+  idly: 'rice',
+  idli: 'rice',
+  idlis: 'rice',
+  latte: 'coffee',
+  espresso: 'coffee',
+  americano: 'coffee',
+  cappuccino: 'coffee',
+  mocha: 'coffee',
+  chai: 'tea',
+  granola: 'oats',
+  oatmeal: 'oats',
+  oat: 'oats',
+  dumpling: 'wheat',
+  dumplings: 'wheat',
+  bread: 'wheat',
+  toast: 'wheat',
+  bagel: 'wheat',
+  pasta: 'wheat',
+  pizza: 'wheat',
+  flour: 'wheat',
+  cracker: 'wheat',
+  crackers: 'wheat',
+  metamucil: 'psyllium fiber',
+  psyllium: 'psyllium fiber',
+  cola: 'soda',
+  pepsi: 'soda',
+  coke: 'soda',
+  yoghurt: 'milk',
+  yogurt: 'milk',
+  cream: 'milk',
+  dairy: 'milk',
+  cheese: 'milk',
+  butter: 'milk',
+  peanut: 'peanuts',
+  potatoes: 'potato',
+};
+
+/** Phrase/token -> several ingredient concepts. */
+const COMPOSITE_RULES: Array<{ pattern: RegExp; concepts: string[] }> = [
+  { pattern: /\blatte\b/, concepts: ['coffee', 'milk'] },
+  { pattern: /\bcappuccino\b/, concepts: ['coffee', 'milk'] },
+  { pattern: /\bmocha\b/, concepts: ['coffee', 'milk'] },
+  { pattern: /\bmacchiato\b/, concepts: ['coffee', 'milk'] },
+  { pattern: /\bflat\s+white\b/, concepts: ['coffee', 'milk'] },
+  { pattern: /\bhot chocolate\b|\bcocoa\b/, concepts: ['chocolate', 'milk'] },
+  { pattern: /\bcoconut water\b/, concepts: ['coconut'] },
+];
+
+const KEYWORD_RULES: Array<{ pattern: RegExp; concept: string }> = [
+  { pattern: /\bcoffee\b|\bespresso\b|\bamericano\b/, concept: 'coffee' },
+  { pattern: /\bmilk\b|cream|dairy|yogurt|yoghurt|cheese|butter/, concept: 'milk' },
+  { pattern: /\bsugar\b/, concept: 'sugar' },
+  { pattern: /chicken/, concept: 'chicken' },
+  { pattern: /\begg|omelette|omelet|omlette/, concept: 'eggs' },
+  { pattern: /potato/, concept: 'potato' },
+  { pattern: /\brice\b|idly|idli/, concept: 'rice' },
+  { pattern: /\boat|granola/, concept: 'oats' },
+  { pattern: /dumpling|wheat|flour|toast|bagel|bread|pasta|pizza|cracker/, concept: 'wheat' },
+  { pattern: /metamucil|psyllium|\bfiber\b/, concept: 'psyllium fiber' },
+  { pattern: /coconut/, concept: 'coconut' },
+  { pattern: /\btea\b|chai/, concept: 'tea' },
+  { pattern: /tomato/, concept: 'tomato' },
+  { pattern: /peanut/, concept: 'peanuts' },
+  { pattern: /\bapple\b/, concept: 'apple' },
+  { pattern: /banana/, concept: 'banana' },
+  { pattern: /\borange\b/, concept: 'orange' },
+  { pattern: /quinoa/, concept: 'quinoa' },
+  { pattern: /turkey/, concept: 'turkey' },
+  { pattern: /\bsoda\b|\bcola\b/, concept: 'soda' },
+  { pattern: /honey/, concept: 'honey' },
+  { pattern: /\bchocolate\b/, concept: 'chocolate' },
+];
+
+const PORTION_TAIL =
+  /,?\s*\d+(\.\d+)?\s*(g|gram|grams|kg|oz|ounce|ounces|ml|l|cup|cups|tsp|tbsp|tablespoons?|teaspoons?|pieces?|bars?|cans?|bottles?|rounded\s+tsp)\b.*$/i;
+const PORTION_INLINE =
+  /\b\d+(\.\d+)?\s*(g|gram|grams|kg|oz|ounce|ounces|ml|l|cup|cups|tsp|tbsp|pieces?|bars?|cans?|bottles?)\b/gi;
+const SIZE_WORD = /\b(small|medium|large|grande|venti|tall|rounded)\b/gi;
+
 export function isDrink(text: string): boolean {
   const lowerText = text.toLowerCase();
   return DRINK_KEYWORDS.some((keyword) => lowerText.includes(keyword));
 }
 
-/** Canonical names inferred from a food line (no DB). */
+export function singularize(word: string): string {
+  const lower = word.toLowerCase();
+  if (UNCOUNTABLE.has(lower)) return lower;
+  if (lower.endsWith('ies') && lower.length > 4) return `${lower.slice(0, -3)}y`;
+  if (lower.endsWith('oes') && lower.length > 4) return lower.slice(0, -2);
+  if (lower.endsWith('sses')) return lower.slice(0, -2);
+  if (lower.endsWith('s') && !lower.endsWith('ss') && lower.length > 3) return lower.slice(0, -1);
+  return lower;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Lowercase/trim, then drop brand prefixes and portion/size tails. Raw text is not modified. */
+export function stripBrandAndPortion(foodText: string, brand?: string): string {
+  let text = String(foodText || '').toLowerCase().trim();
+  if (!text) return '';
+
+  if (brand) {
+    const brandNorm = brand.toLowerCase().trim();
+    if (brandNorm) {
+      text = text.replace(
+        new RegExp(`^${escapeRegExp(brandNorm)}\\s*(?:-\\s*)?`, 'i'),
+        ''
+      );
+    }
+  }
+
+  const dashParts = text
+    .split(/\s+-\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !/^(small|medium|large|grande|venti|tall)\b/.test(part));
+
+  // "Brand - food name" without a separate brand field: drop the prefix segment.
+  text = !brand && dashParts.length > 1 ? dashParts.slice(1).join(' ') : dashParts.join(' ');
+
+  text = text.replace(PORTION_TAIL, ' ');
+  text = text.replace(PORTION_INLINE, ' ');
+  text = text.replace(SIZE_WORD, ' ');
+  text = text.replace(/&/g, ' and ');
+  text = text.replace(/[^a-z0-9\s]/g, ' ');
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+export function fallbackConceptName(cleaned: string): string {
+  const words = cleaned
+    .split(/\s+/)
+    .filter((word) => word && !STOP_WORDS.has(word))
+    .map(singularize);
+  return words.join(' ').trim();
+}
+
+function shouldSkipKeyword(concept: string, cleaned: string): boolean {
+  if (concept === 'sugar' && /sugar\s*free/.test(cleaned)) return true;
+  if (concept === 'orange' && /metamucil|psyllium/.test(cleaned)) return true;
+  if (concept === 'water' && /coconut/.test(cleaned)) return true;
+  return false;
+}
+
+/** Canonical ingredient names inferred from a food line. Does not change raw text. */
 export function inferConceptNames(foodText: string, brand?: string): string[] {
-  const lower = `${brand || ''} ${foodText}`.toLowerCase();
+  const cleaned = stripBrandAndPortion(foodText, brand);
+  if (!cleaned) {
+    const fallback = fallbackConceptName(String(foodText || '').toLowerCase().trim());
+    return fallback ? [fallback] : [];
+  }
+
   const names = new Set<string>();
 
-  if (/coffee|latte|espresso|cappuccino|mocha|americano/.test(lower)) names.add('coffee');
-  if (/\bmilk\b|latte|cream|dairy|yogurt|cheese|butter/.test(lower)) names.add('milk');
-  if (/sugar/.test(lower) && !/sugar\s*free/.test(lower)) names.add('sugar');
-  if (/chicken/.test(lower)) names.add('chicken');
-  if (/egg|omelette|omelet|omlette/.test(lower)) names.add('eggs');
-  if (/potato/.test(lower)) names.add('potato');
-  if (/rice|idly|idli/.test(lower)) names.add('rice');
-  if (/oat|granola/.test(lower)) names.add('oats');
-  if (/dumpling|wheat|flour|toast|bagel|bread|pasta|pizza|cracker/.test(lower)) names.add('wheat');
-  if (/metamucil|psyllium|fiber/.test(lower)) names.add('psyllium fiber');
-  if (/coconut/.test(lower)) names.add('coconut');
-  if (/\btea\b|chai/.test(lower)) names.add('tea');
-  if (/tomato/.test(lower)) names.add('tomato');
-  if (/water/.test(lower) && !/coconut/.test(lower)) names.add('water');
-  if (/peanut/.test(lower)) names.add('peanuts');
-  if (/apple/.test(lower)) names.add('apple');
-  if (/banana/.test(lower)) names.add('banana');
-  if (/orange/.test(lower) && !/metamucil/.test(lower)) names.add('orange');
-  if (/quinoa/.test(lower)) names.add('quinoa');
-  if (/turkey/.test(lower)) names.add('turkey');
-  if (/soda|cola/.test(lower)) names.add('soda');
-  if (/honey/.test(lower)) names.add('honey');
+  for (const rule of COMPOSITE_RULES) {
+    if (rule.pattern.test(cleaned)) {
+      rule.concepts.forEach((concept) => names.add(concept));
+    }
+  }
 
-  return [...names];
+  for (const token of cleaned.split(/\s+/)) {
+    const aliased = CONCEPT_ALIASES[token] || CONCEPT_ALIASES[singularize(token)];
+    if (aliased) names.add(aliased);
+  }
+
+  for (const rule of KEYWORD_RULES) {
+    if (rule.pattern.test(cleaned) && !shouldSkipKeyword(rule.concept, cleaned)) {
+      names.add(rule.concept);
+    }
+  }
+
+  if (/\bwater\b/.test(cleaned) && !/coconut/.test(cleaned)) {
+    names.add('water');
+  }
+
+  if (names.size > 0) return [...names];
+
+  const unmatched = fallbackConceptName(cleaned);
+  return unmatched ? [unmatched] : [];
 }
 
 export async function upsertConceptsByName(
@@ -115,69 +276,24 @@ export async function upsertConceptsByName(
     .filter((row): row is NormalizationResult['concepts'][number] => Boolean(row));
 }
 
-async function geminiConceptNames(foodText: string, brand?: string): Promise<string[]> {
-  if (!process.env.GEMINI_API_KEY || process.env.VISION_PROVIDER === 'mock') {
-    return [];
-  }
-  try {
-    const { text } = await generateContentWithFallback({
-      apiKey: process.env.GEMINI_API_KEY,
-      model: resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL),
-      contents: `Normalize this food into core ingredient concepts (not brands).
-Food: ${foodText}
-${brand ? `Brand: ${brand}` : ''}
-Examples: "Dunkin' Donuts - Latte With Sugar" -> coffee, milk, sugar.
-Return JSON: {"concepts":[{"name":"coffee","confidence":0.95}]}`,
-      config: { responseMimeType: 'application/json' },
-    });
-    const parsed = JSON.parse(text);
-    return (parsed.concepts || []).map((c: { name: string }) => String(c.name).toLowerCase());
-  } catch (error) {
-    console.error('Gemini concept extraction failed:', error);
-    return [];
-  }
-}
-
-export type NormalizeOptions = {
-  /** Gemini is opt-in for background/cron work. Save persist never sets this. */
-  useGemini?: boolean;
-};
-
-function conceptNamesForItem(foodText: string, brand?: string): string[] {
-  const fromRules = inferConceptNames(foodText, brand);
-  const fallback = foodText.split(',')[0].trim().toLowerCase();
-  const names = fromRules.length > 0 ? fromRules : fallback ? [fallback] : [];
-  return [...new Set(names)];
-}
-
 export async function normalizeFoodItem(
   foodText: string,
-  brand?: string,
-  options?: NormalizeOptions
+  brand?: string
 ): Promise<NormalizationResult> {
-  const fromRules = inferConceptNames(foodText, brand);
-  const fromGemini = options?.useGemini === false ? [] : await geminiConceptNames(foodText, brand);
-  const merged = [...new Set([...fromRules, ...fromGemini])];
-  const names = (merged.length > 0 ? merged : [foodText.split(',')[0].trim().toLowerCase()]).filter(Boolean);
+  const names = inferConceptNames(foodText, brand);
   const concepts = await upsertConceptsByName(names.map((name) => ({ name, confidence: 0.85 })));
   return { concepts };
 }
 
 export async function linkFoodItemsBatch(
-  items: Array<{ id: string; rawText: string; brand?: string | null }>,
-  options?: NormalizeOptions
+  items: Array<{ id: string; rawText: string; brand?: string | null }>
 ): Promise<{ items: number; links: number }> {
   if (items.length === 0) return { items: 0, links: 0 };
 
-  const perItem: Array<{ id: string; names: string[] }> = [];
-  for (const item of items) {
-    let names = conceptNamesForItem(item.rawText, item.brand || undefined);
-    if (options?.useGemini) {
-      const fromGemini = await geminiConceptNames(item.rawText, item.brand || undefined);
-      names = [...new Set([...names, ...fromGemini])];
-    }
-    perItem.push({ id: item.id, names });
-  }
+  const perItem = items.map((item) => ({
+    id: item.id,
+    names: inferConceptNames(item.rawText, item.brand || undefined),
+  }));
 
   const uniqueNames = [...new Set(perItem.flatMap((row) => row.names))];
   const concepts = await upsertConceptsByName(uniqueNames.map((name) => ({ name })));
@@ -196,7 +312,7 @@ export async function linkFoodItemsBatch(
         foodItemId: item.id,
         foodConceptId: concept.conceptId,
         confidence: concept.confidence,
-        assignedBy: 'ai' as const,
+        assignedBy: 'rules' as const,
       });
     }
   }
@@ -212,31 +328,29 @@ export async function linkFoodItemsBatch(
 }
 
 export async function linkFoodItemsByIds(
-  foodItemIds: string[],
-  options?: NormalizeOptions
+  foodItemIds: string[]
 ): Promise<{ items: number; links: number }> {
   if (foodItemIds.length === 0) return { items: 0, links: 0 };
   const items = await prisma.foodItem.findMany({
     where: { id: { in: foodItemIds } },
     select: { id: true, rawText: true, brand: true },
   });
-  return linkFoodItemsBatch(items, options);
+  return linkFoodItemsBatch(items);
 }
 
 export async function linkFoodItemConcepts(
   foodItemId: string,
   foodText: string,
-  brand?: string | null,
-  options?: NormalizeOptions
+  brand?: string | null
 ): Promise<NormalizationResult> {
-  const result = await normalizeFoodItem(foodText, brand || undefined, options);
+  const result = await normalizeFoodItem(foodText, brand || undefined);
   if (result.concepts.length > 0) {
     await prisma.foodItemConcept.createMany({
       data: result.concepts.map((concept) => ({
         foodItemId,
         foodConceptId: concept.conceptId,
         confidence: concept.confidence,
-        assignedBy: 'ai',
+        assignedBy: 'rules',
       })),
       skipDuplicates: true,
     });
@@ -245,21 +359,19 @@ export async function linkFoodItemConcepts(
 }
 
 export async function linkUnlinkedFoodItemConcepts(
-  options?: NormalizeOptions & { limit?: number }
+  options?: { limit?: number }
 ): Promise<{ items: number; links: number }> {
   const items = await prisma.foodItem.findMany({
     where: { foodItemConcepts: { none: {} } },
     select: { id: true, rawText: true, brand: true },
     take: options?.limit ?? 200,
   });
-  return linkFoodItemsBatch(items, { useGemini: options?.useGemini === true });
+  return linkFoodItemsBatch(items);
 }
 
-export async function backfillAllFoodItemConcepts(
-  options?: NormalizeOptions
-): Promise<{ items: number; links: number }> {
+export async function backfillAllFoodItemConcepts(): Promise<{ items: number; links: number }> {
   const items = await prisma.foodItem.findMany({
     select: { id: true, rawText: true, brand: true },
   });
-  return linkFoodItemsBatch(items, options);
+  return linkFoodItemsBatch(items);
 }

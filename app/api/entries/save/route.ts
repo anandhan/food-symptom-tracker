@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     after(async () => {
       console.time('save:concepts');
       try {
-        await linkFoodItemsByIds(persisted.foodItemIds, { useGemini: false });
+        await linkFoodItemsByIds(persisted.foodItemIds);
       } catch (error) {
         console.error('Background concept linking failed:', error);
       } finally {
