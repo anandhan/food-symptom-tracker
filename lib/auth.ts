@@ -1,10 +1,13 @@
-// NextAuth configuration with Google OAuth and credentials fallback
+// NextAuth configuration with Google OAuth and credentials fallback.
+// Node-only: Prisma and bcrypt stay here, not in the edge middleware config.
 
-import NextAuth, { NextAuthConfig } from 'next-auth';
-import GoogleProvider from 'next-auth/providers/google';
-import CredentialsProvider from 'next-auth/providers/credentials';
+import NextAuth from 'next-auth';
+import Credentials from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
 import { prisma } from '@/lib/db';
+import { authConfig } from '@/auth.config';
+
+export { authConfig };
 
 // Parse allowed emails from env var
 const allowedEmails = process.env.ALLOWED_EMAILS
@@ -12,16 +15,11 @@ const allowedEmails = process.env.ALLOWED_EMAILS
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean) || [];
 
-export const authConfig: NextAuthConfig = {
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   providers: [
-    // Primary: Google OAuth
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    }),
-
-    // Fallback: Credentials (uses env vars in production, DB users in dev)
-    CredentialsProvider({
+    ...(authConfig.providers ?? []),
+    Credentials({
       id: 'credentials',
       name: 'Username and Password',
       credentials: {
@@ -88,16 +86,9 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
 
-  session: {
-    strategy: 'jwt',
-  },
-
-  pages: {
-    signIn: '/login',
-    error: '/login',
-  },
-
   callbacks: {
+    ...authConfig.callbacks,
+
     async signIn({ user, account }) {
       // For Google OAuth, check email allowlist
       if (account?.provider === 'google') {
@@ -141,18 +132,18 @@ export const authConfig: NextAuthConfig = {
     async jwt({ token, user, account }) {
       if (user) {
         token.userId = user.id;
-        
+
         // For credentials login, user is already from DB
         if (account?.provider === 'credentials') {
           token.email = user.email || undefined;
         }
-        
+
         // For Google login, find user in DB
         if (account?.provider === 'google' && user.email) {
           const dbUser = await prisma.user.findUnique({
             where: { email: user.email },
           });
-          
+
           if (dbUser) {
             token.userId = dbUser.id;
             token.email = dbUser.email || undefined;
@@ -173,6 +164,4 @@ export const authConfig: NextAuthConfig = {
       return session;
     },
   },
-};
-
-export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
+});
