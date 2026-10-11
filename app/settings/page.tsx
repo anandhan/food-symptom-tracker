@@ -215,26 +215,22 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>AI Configuration</CardTitle>
               <CardDescription>
-                Vision and analysis settings
+                On-device extraction and analysis interpretation
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-sm">
                 <div>
-                  <p className="text-muted-foreground">Provider</p>
-                  <p className="font-medium">Google Gemini</p>
+                  <p className="text-muted-foreground">Food extraction</p>
+                  <p className="font-medium">Tesseract.js (on-device OCR, English) + MyFitnessPal parser</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Extraction Model</p>
-                  <p className="font-medium">gemini-3.8-flash</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Analysis Model</p>
-                  <p className="font-medium">gemini-3.8-flash</p>
+                  <p className="text-muted-foreground">Analysis interpretation</p>
+                  <p className="font-medium">Google Gemini (gemini-3.8-flash) — optional</p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-4">
-                Configuration is managed via environment variables
+                Screenshots are read in the browser. Gemini is used only to interpret already-computed analysis, never to extract meals.
               </p>
             </CardContent>
           </Card>

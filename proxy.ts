@@ -14,6 +14,7 @@ function isPublicPath(pathname: string) {
   if (pathname.startsWith('/api/cron')) return true;
   if (pathname.startsWith('/_next')) return true;
   if (pathname === '/manifest.json' || pathname === '/sw.js') return true;
+  if (pathname.startsWith('/ocr/')) return true;
   if (pathname === '/favicon.ico' || pathname.startsWith('/favicon')) return true;
   if (pathname === '/apple-touch-icon.png' || pathname.startsWith('/apple-touch-icon')) return true;
   if (pathname.startsWith('/icon-')) return true;

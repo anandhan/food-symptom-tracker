@@ -1,26 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthorizedSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { getVisionProvider } from '@/lib/ai/vision-provider';
-import { errorPayload, StageError } from '@/lib/ai/extraction-errors';
-import { resolveGeminiModel } from '@/lib/ai/gemini-model';
+import { errorPayload } from '@/lib/ai/extraction-errors';
+import { TESSERACT_MODEL_VERSION } from '@/lib/ocr/assets';
+import { emptyExtraction, type ExtractionResult, type FoodEntry } from '@/lib/ocr/types';
 
-export const maxDuration = 60;
+export const maxDuration = 30;
 
-const EXTRACT_TIMEOUT_MS = 55_000;
+function asOptionalNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
 
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new StageError('timeout', 'Extraction timed out', `Exceeded ${ms}ms`));
-    }, ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
+function normalizeEntry(entry: unknown): FoodEntry | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const row = entry as Record<string, unknown>;
+  const text = String(row.text || row.food_name || '').trim();
+  if (!text) return null;
+  return {
+    text,
+    brand: row.brand ? String(row.brand) : undefined,
+    food_name: row.food_name ? String(row.food_name) : undefined,
+    quantity: row.quantity ? String(row.quantity) : undefined,
+    is_drink: Boolean(row.is_drink),
+    calories: asOptionalNumber(row.calories),
+    carbs: asOptionalNumber(row.carbs),
+    fat: asOptionalNumber(row.fat),
+    protein: asOptionalNumber(row.protein),
+    fiber: asOptionalNumber(row.fiber),
+    sugar: asOptionalNumber(row.sugar),
+    needs_review: Boolean(row.needs_review),
+    ocr_confidence: asOptionalNumber(row.ocr_confidence),
+  };
+}
+
+function normalizeClientResult(raw: unknown): ExtractionResult {
+  if (!raw || typeof raw !== 'object') {
+    return emptyExtraction('', 0);
   }
+  const body = raw as Record<string, unknown>;
+  const slots = ['breakfast', 'lunch', 'dinner', 'snacks', 'drinks'] as const;
+  const result = emptyExtraction(String(body.raw_ocr_text || ''), Number(body.confidence) || 0);
+  for (const slot of slots) {
+    const list = Array.isArray(body[slot]) ? body[slot] : [];
+    result[slot] = list.map(normalizeEntry).filter((item): item is FoodEntry => Boolean(item));
+  }
+  if (typeof body.extracted_date === 'string' && body.extracted_date) {
+    result.extracted_date = body.extracted_date;
+  }
+  result.model = typeof body.model === 'string' && body.model ? body.model : TESSERACT_MODEL_VERSION;
+  return result;
 }
 
 export async function POST(request: NextRequest) {
@@ -34,12 +64,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { imageId, imageUrl, imageBase64, mimeType, dailyEntryId } = body as {
+    const { imageId, dailyEntryId, result } = body as {
       imageId?: string;
-      imageUrl?: string;
-      imageBase64?: string;
-      mimeType?: string;
       dailyEntryId?: string;
+      result?: unknown;
     };
 
     if (!dailyEntryId) {
@@ -49,15 +77,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const resolvedUrl =
-      imageUrl ||
-      (imageBase64
-        ? `data:${mimeType || 'image/jpeg'};base64,${imageBase64}`
-        : '');
-
-    if (!resolvedUrl) {
+    if (!result || typeof result !== 'object') {
       return NextResponse.json(
-        { error: 'Missing required fields', code: 'extract', detail: 'imageUrl or imageBase64 is required' },
+        {
+          error: 'Missing parsed extraction',
+          code: 'extract',
+          detail: 'Client-side OCR result is required; Gemini is not used for extraction',
+        },
         { status: 400 }
       );
     }
@@ -73,13 +99,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const provider = getVisionProvider();
-    console.log(`Using vision provider: ${provider.name}`);
-
-    const extractionResult = await withTimeout(
-      provider.extractFoods(resolvedUrl),
-      EXTRACT_TIMEOUT_MS
-    );
+    const extractionResult = normalizeClientResult(result);
 
     const extraction = await prisma.ocrExtraction.create({
       data: {
@@ -90,17 +110,13 @@ export async function POST(request: NextRequest) {
         extractedDate: extractionResult.extracted_date
           ? new Date(extractionResult.extracted_date)
           : null,
-        modelName: provider.name,
-        modelVersion:
-          extractionResult.model ||
-          (provider.name === 'gemini'
-            ? resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL)
-            : 'mock'),
+        modelName: 'tesseract.js',
+        modelVersion: extractionResult.model || TESSERACT_MODEL_VERSION,
         confidenceScore: extractionResult.confidence,
       },
     });
 
-    console.log(`[extract] succeeded model=${extraction.modelVersion}`);
+    console.log(`[extract] saved on-device OCR model=${extraction.modelVersion}`);
     return NextResponse.json({
       extractionId: extraction.id,
       result: extractionResult,

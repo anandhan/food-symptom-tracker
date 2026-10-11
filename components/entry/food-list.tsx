@@ -104,6 +104,11 @@ export function FoodList({ meals, onMealsChange }: FoodListProps) {
                           Drink
                         </span>
                       )}
+                      {item.needs_review && (
+                        <span className="inline-block mt-1 ml-1 px-2 py-0.5 text-xs bg-amber-100 text-amber-900 rounded">
+                          Low OCR confidence — review
+                        </span>
+                      )}
                     </div>
                     <Button
                       variant="ghost"

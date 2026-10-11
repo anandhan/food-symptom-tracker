@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { SessionProvider } from '@/components/session-provider';
+import { ServiceWorkerRegister } from '@/components/service-worker-register';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -47,6 +48,7 @@ export default async function RootLayout({
       </head>
       <body className={`${inter.className} h-full antialiased`}>
         <SessionProvider>
+          <ServiceWorkerRegister />
           {children}
         </SessionProvider>
       </body>

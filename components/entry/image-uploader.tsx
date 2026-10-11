@@ -1,5 +1,3 @@
-// Image uploader component with paste and file upload
-
 'use client';
 
 import { useState, useRef, useEffect, type MouseEvent } from 'react';
@@ -7,12 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDateISO } from '@/lib/utils';
 import { compressImageForUpload } from '@/lib/images/compress-client';
+import { parseMfpDiary } from '@/lib/ocr/mfp-parser';
+import type { ExtractionResult } from '@/lib/ocr/types';
 
 interface ImageUploaderProps {
   dailyEntryId: string | null;
   userId: string;
   selectedDate: Date | string;
-  onExtractionComplete: (result: any) => void;
+  onExtractionComplete: (result: ExtractionResult) => void;
   onDailyEntryCreated: (id: string) => void;
 }
 
@@ -25,20 +25,18 @@ export function ImageUploader({
 }: ImageUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState('');
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
   const [canRetryExtract, setCanRetryExtract] = useState(false);
+  const [pasteText, setPasteText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const handleFileRef = useRef<(file: File) => Promise<void>>(async () => {});
   const dailyEntryIdRef = useRef(dailyEntryId);
   dailyEntryIdRef.current = dailyEntryId;
-  const lastExtractBodyRef = useRef<{
-    imageId?: string;
-    imageUrl?: string;
-    dailyEntryId: string;
-  } | null>(null);
   const lastFileRef = useRef<File | null>(null);
 
   const ensureDailyEntry = async (): Promise<string> => {
@@ -62,93 +60,86 @@ export function ImageUploader({
     return data.dailyEntryId;
   };
 
-  const readApiError = async (response: Response, fallback: string) => {
+  const persistParsed = async (result: ExtractionResult, file?: File | null) => {
     try {
-      const data = await response.json();
-      const code = typeof data.code === 'string' ? `[${data.code}] ` : '';
-      const detail = data.detail || data.error || fallback;
-      return `${code}${data.error && data.detail && data.detail !== data.error ? `${data.error} — ${data.detail}` : detail}`;
-    } catch {
-      return `${fallback} (HTTP ${response.status})`;
-    }
-  };
+      const entryId = await ensureDailyEntry();
+      let imageId: string | undefined;
+      if (file) {
+        setIsUploading(true);
+        try {
+          const compressed = await compressImageForUpload(file);
+          if (compressed.size <= 4 * 1024 * 1024) {
+            const formData = new FormData();
+            formData.append('image', compressed);
+            formData.append('dailyEntryId', entryId);
+            const uploadResponse = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData,
+            });
+            if (uploadResponse.ok) {
+              const uploadData = await uploadResponse.json();
+              imageId = uploadData.id;
+              setUploadedImageUrl(uploadData.url?.startsWith('data:') ? 'inline' : uploadData.url);
+            }
+          }
+        } catch (error) {
+          console.warn('Optional image store skipped', error);
+        } finally {
+          setIsUploading(false);
+        }
+      }
 
-  const extractWithBody = async (body: { imageId?: string; imageUrl?: string; dailyEntryId: string }) => {
-    lastExtractBodyRef.current = body;
-    setIsExtracting(true);
-    const extractResponse = await fetch('/api/extract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!extractResponse.ok) {
-      const data = await extractResponse.json().catch(() => ({} as { code?: string; error?: string; detail?: string }));
-      const retryable = data.code === 'gemini-busy' || data.code === 'timeout';
-      setCanRetryExtract(retryable && Boolean(lastExtractBodyRef.current || lastFileRef.current));
-      const detail = data.detail && data.detail !== data.error ? ` — ${data.detail}` : '';
-      const code = typeof data.code === 'string' ? `[${data.code}] ` : '';
-      throw new Error(
-        data.code === 'gemini-busy'
-          ? `${data.error || 'Gemini is busy right now, try again in a minute'}${detail}`
-          : `${code}${data.error || data.detail || 'Extraction failed'}${detail}`
-      );
+      await fetch('/api/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dailyEntryId: entryId,
+          imageId,
+          result,
+        }),
+      });
+    } catch (error) {
+      console.warn('Could not persist on-device extraction', error);
     }
-    const extractData = await extractResponse.json();
-    if (extractData.model) {
-      console.log(`[extract] used model=${extractData.model}`);
-    }
-    onExtractionComplete(extractData.result);
-    setIsExtracting(false);
-    setCanRetryExtract(false);
   };
 
   const handleFile = async (file: File) => {
     lastFileRef.current = file;
-    setIsUploading(true);
-    setIsExtracting(false);
+    setIsUploading(false);
+    setIsExtracting(true);
+    setOcrProgress(0);
+    setOcrStatus('Loading OCR');
     setProcessError(null);
     setCanRetryExtract(false);
 
     try {
-      const entryId = await ensureDailyEntry();
-      const compressed = await compressImageForUpload(file);
-      lastFileRef.current = compressed;
-      if (compressed.size > 4 * 1024 * 1024) {
-        throw new Error(
-          `[size] Compressed image is still ${compressed.size} bytes. Try a smaller screenshot.`
-        );
-      }
-
-      const formData = new FormData();
-      formData.append('image', compressed);
-      formData.append('dailyEntryId', entryId);
-
-      const uploadResponse = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      const { extractFoodsFromImage } = await import('@/lib/ocr/client');
+      const result = await extractFoodsFromImage(file, ({ status, progress }) => {
+        setOcrStatus(status);
+        setOcrProgress(Math.round(progress * 100));
       });
-
-      if (!uploadResponse.ok) {
-        throw new Error(await readApiError(uploadResponse, 'Upload failed'));
-      }
-
-      const uploadData = await uploadResponse.json();
-      setUploadedImageUrl(uploadData.url?.startsWith('data:') ? 'inline' : uploadData.url);
-      setIsUploading(false);
-
-      await extractWithBody({
-        imageId: uploadData.id,
-        imageUrl: uploadData.url,
-        dailyEntryId: entryId,
-      });
+      onExtractionComplete(result);
+      setIsExtracting(false);
+      setOcrStatus('');
+      await persistParsed(result, file);
     } catch (error) {
-      console.error('Upload/extraction error:', error);
+      console.error('OCR error:', error);
       const message =
-        error instanceof Error ? error.message : 'Failed to process image. Please enter foods manually.';
+        error instanceof Error ? error.message : 'Failed to read image. Paste diary text or enter foods manually.';
       setProcessError(message);
+      setCanRetryExtract(Boolean(lastFileRef.current));
       setIsUploading(false);
       setIsExtracting(false);
     }
+  };
+
+  const handlePasteText = async () => {
+    const text = pasteText.trim();
+    if (!text) return;
+    setProcessError(null);
+    const result = parseMfpDiary(text);
+    onExtractionComplete(result);
+    await persistParsed(result);
   };
 
   const retryLastExtract = async (event: MouseEvent) => {
@@ -156,19 +147,8 @@ export function ImageUploader({
     event.stopPropagation();
     setProcessError(null);
     setCanRetryExtract(false);
-    try {
-      if (lastExtractBodyRef.current) {
-        await extractWithBody(lastExtractBodyRef.current);
-        return;
-      }
-      if (lastFileRef.current) {
-        await handleFile(lastFileRef.current);
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to process image. Please enter foods manually.';
-      setProcessError(message);
-      setIsExtracting(false);
+    if (lastFileRef.current) {
+      await handleFile(lastFileRef.current);
     }
   };
 
@@ -210,6 +190,10 @@ export function ImageUploader({
     };
 
     const handlePaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) {
+        return;
+      }
       let file = takeImage(e.clipboardData);
       if (!file) file = await readClipboardApi();
       if (!file) return;
@@ -226,7 +210,6 @@ export function ImageUploader({
     };
   }, []);
 
-  // Handle file input change
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -234,7 +217,6 @@ export function ImageUploader({
     }
   };
 
-  // Handle drag and drop
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
@@ -247,15 +229,17 @@ export function ImageUploader({
     e.preventDefault();
   };
 
+  const progressLabel = ocrStatus || (isUploading ? 'Saving image…' : 'Reading diary');
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Upload Food Image</CardTitle>
         <CardDescription>
-          Paste (Cmd+V) or upload your food diary screenshot
+          Paste or upload a MyFitnessPal screenshot. Text is read on this device — nothing is sent to Gemini.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <div
           ref={dropZoneRef}
           data-testid="image-dropzone"
@@ -275,15 +259,24 @@ export function ImageUploader({
           className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer"
           onClick={() => fileInputRef.current?.click()}
         >
-          {isUploading ? (
-            <p className="text-muted-foreground">Compressing and uploading image...</p>
-          ) : isExtracting ? (
-            <p className="text-muted-foreground">
-              Extracting foods with AI... This may take a few seconds.
-            </p>
+          {isExtracting ? (
+            <div className="space-y-3" data-testid="ocr-progress">
+              <p className="text-muted-foreground">{progressLabel}</p>
+              <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-[width] duration-200"
+                  style={{ width: `${Math.max(4, ocrProgress)}%` }}
+                  role="progressbar"
+                  aria-valuenow={ocrProgress}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">{ocrProgress}%</p>
+            </div>
           ) : processError ? (
             <div className="space-y-3 text-left">
-              <p className="text-destructive font-medium">Could not process image</p>
+              <p className="text-destructive font-medium">Could not read image</p>
               <p className="text-sm text-destructive/90 whitespace-pre-wrap">{processError}</p>
               <div className="flex flex-wrap gap-2">
                 {canRetryExtract && (
@@ -303,7 +296,7 @@ export function ImageUploader({
             </div>
           ) : uploadedImageUrl ? (
             <div className="space-y-2">
-              <p className="text-green-600 font-medium">✓ Image uploaded and processed</p>
+              <p className="text-green-600 font-medium">✓ Diary read on this device</p>
               <Button variant="outline" size="sm">
                 Upload Another
               </Button>
@@ -314,7 +307,7 @@ export function ImageUploader({
               <div>
                 <p className="font-medium">Click to upload or drag and drop</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Or press Cmd+V to paste from clipboard
+                  Or press Cmd+V to paste a screenshot
                 </p>
               </div>
               <Button variant="outline">
@@ -330,6 +323,30 @@ export function ImageUploader({
           onChange={handleFileChange}
           className="hidden"
         />
+
+        <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+          <label htmlFor="mfp-paste-text" className="text-sm font-medium">
+            Or paste diary text
+          </label>
+          <textarea
+            id="mfp-paste-text"
+            data-testid="mfp-paste-text"
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            placeholder="Paste MyFitnessPal diary text here if you would rather skip the screenshot."
+            className="w-full min-h-[96px] rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="mfp-parse-text"
+            onClick={handlePasteText}
+            disabled={!pasteText.trim()}
+          >
+            Parse pasted text
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

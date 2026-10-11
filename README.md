@@ -79,10 +79,8 @@ GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=<your-client-secret>
 ALLOWED_EMAILS=your.email@gmail.com
 
-# Google Gemini AI (optional, defaults to mock)
-VISION_PROVIDER=gemini  # or 'mock' for testing without API key
+# Google Gemini AI (optional — analysis interpretation only)
 GEMINI_API_KEY=<your-gemini-api-key>
-GEMINI_EXTRACTION_MODEL=gemini-3.8-flash
 GEMINI_ANALYSIS_MODEL=gemini-3.8-flash
 
 # Vercel Blob (auto-set in production, optional locally)
@@ -143,9 +141,7 @@ Open [http://localhost:3000](http://localhost:3000).
    GOOGLE_CLIENT_ID=<your-client-id>
    GOOGLE_CLIENT_SECRET=<your-client-secret>
    ALLOWED_EMAILS=your.email@gmail.com,another@gmail.com
-   VISION_PROVIDER=gemini
    GEMINI_API_KEY=<your-gemini-key>
-   GEMINI_EXTRACTION_MODEL=gemini-3.8-flash
    GEMINI_ANALYSIS_MODEL=gemini-3.8-flash
    DATABASE_URL=${POSTGRES_PRISMA_URL}
    # Pooled Prisma URL is required on Neon/Vercel. Unpooled DATABASE_URL is
@@ -258,11 +254,10 @@ tests/
 - `GOOGLE_CLIENT_SECRET` - OAuth client secret
 - `ALLOWED_EMAILS` - Comma-separated list of authorized emails
 
-### AI (Optional, fallback to mock)
-- `VISION_PROVIDER` - `gemini` or `mock`
-- `GEMINI_API_KEY` - Get from Google AI Studio
-- `GEMINI_EXTRACTION_MODEL` - Default: `gemini-3.8-flash` (retired `gemini-2.5-*` ids are remapped)
-- `GEMINI_ANALYSIS_MODEL` - Default: `gemini-3.8-flash` (no current Pro equivalent; retired `gemini-2.5-*` ids are remapped)
+### AI (Optional — analysis only)
+- `GEMINI_API_KEY` - Get from Google AI Studio. Used only to interpret already-computed analysis/report stats.
+- `GEMINI_ANALYSIS_MODEL` - Default: `gemini-3.8-flash` (retired `gemini-2.5-*` ids are remapped)
+- Food extraction is on-device Tesseract.js + a deterministic MyFitnessPal parser. `VISION_PROVIDER` / `GEMINI_EXTRACTION_MODEL` are unused.
 
 ### Storage (Auto-set by Vercel)
 - `BLOB_READ_WRITE_TOKEN` - Vercel Blob token
@@ -273,16 +268,17 @@ tests/
 ## Testing
 
 ### Mock Mode (No API Keys Required)
-Set `VISION_PROVIDER=mock` to test without Gemini:
+Leave `GEMINI_API_KEY` unset:
+- Screenshot / pasted-text extraction runs on-device (Tesseract.js + MFP parser)
 - Manual food entry still works
-- Analysis and normalization use simple rules
+- Analysis correlations stay rule-based; Gemini interpretation is skipped
 - Perfect for development without API costs
 
 ### Test Fixture
 `tests/fixtures/myfitnesspal-example.png` - Sample MyFitnessPal screenshot for testing extraction
 
 ### Saving
-The entry Save button persists raw meals and symptoms in one Postgres transaction (target <2s). Food-concept linking is deterministic (rules only) and runs via `after()` and the weekly cron. Gemini is used only to extract meals from an uploaded/pasted image and to interpret already-computed analysis/report stats. Correlation numbers stay deterministic; Gemini output is stored separately and can be regenerated. A retry after a 25s client timeout replaces meals for that date/slot instead of duplicating them.
+The entry Save button persists raw meals and symptoms in one Postgres transaction (target <2s). Food-concept linking is deterministic (rules only) and runs via `after()` and the weekly cron. Screenshots are read with Tesseract.js in the browser and parsed locally. Gemini is used only to interpret already-computed analysis/report stats. Correlation numbers stay deterministic; Gemini output is stored separately and can be regenerated. A retry after a 25s client timeout replaces meals for that date/slot instead of duplicating them.
 
 ## Cost Expectations
 

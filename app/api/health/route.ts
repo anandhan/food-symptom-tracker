@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAuthorizedSession } from '@/lib/auth';
-import { resolveGeminiModel } from '@/lib/ai/gemini-model';
+import { resolveGeminiAnalysisModel } from '@/lib/ai/gemini-model';
 import { getDatabaseConnectionInfo, prisma } from '@/lib/db';
+import { TESSERACT_MODEL_VERSION } from '@/lib/ocr/assets';
 
 export const maxDuration = 30;
 
@@ -31,16 +32,21 @@ export async function GET() {
   }
   const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
-  const geminiModel = resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL);
+  const geminiModel = resolveGeminiAnalysisModel(process.env.GEMINI_ANALYSIS_MODEL);
 
   return NextResponse.json({
     hasDatabaseUrl,
     hasBlobToken,
     hasGeminiKey,
     geminiModel,
+    extraction: {
+      provider: 'tesseract.js',
+      onDevice: true,
+      model: TESSERACT_MODEL_VERSION,
+    },
     gemini: hasGeminiKey
-      ? { ok: true, configured: true }
-      : { ok: false, configured: false, error: 'GEMINI_API_KEY is not set' },
+      ? { ok: true, configured: true, purpose: 'analysis' }
+      : { ok: false, configured: false, purpose: 'analysis', error: 'GEMINI_API_KEY is not set' },
     db,
   });
 }
