@@ -1,7 +1,8 @@
 // Prisma schema for food and symptom tracking
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -92,7 +93,7 @@ model Meal {
   foodItems     FoodItem[]
   symptomEvents SymptomEvent[]
 
-  @@index([dailyEntryId, mealType])
+  @@unique([dailyEntryId, mealType])
 }
 
 // Individual food items

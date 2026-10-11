@@ -7,11 +7,13 @@ export type ExtractionStage =
   | 'timeout'
   | 'extract';
 
+export type StageCode = ExtractionStage | 'auth' | 'validate' | 'persist' | 'save';
+
 export class StageError extends Error {
-  code: ExtractionStage;
+  code: StageCode;
   detail: string;
 
-  constructor(code: ExtractionStage, message: string, detail?: string) {
+  constructor(code: StageCode, message: string, detail?: string) {
     super(message);
     this.name = 'StageError';
     this.code = code;
@@ -19,12 +21,15 @@ export class StageError extends Error {
   }
 }
 
-export function statusForStage(code: ExtractionStage): number {
+export function statusForStage(code: StageCode): number {
   switch (code) {
     case 'size':
       return 413;
+    case 'auth':
     case 'gemini-auth':
       return 401;
+    case 'validate':
+      return 400;
     case 'timeout':
       return 504;
     default:
@@ -34,7 +39,7 @@ export function statusForStage(code: ExtractionStage): number {
 
 export function classifyUnknownError(
   error: unknown,
-  fallback: ExtractionStage = 'extract'
+  fallback: StageCode = 'extract'
 ): StageError {
   if (error instanceof StageError) return error;
 
@@ -92,8 +97,43 @@ export function classifyUnknownError(
   return new StageError(fallback, message || 'Extraction failed', message);
 }
 
-export function errorPayload(error: unknown, fallback: ExtractionStage = 'extract') {
+export function errorPayload(error: unknown, fallback: StageCode = 'extract') {
   const staged = classifyUnknownError(error, fallback);
+  return {
+    error: staged.message,
+    code: staged.code,
+    detail: staged.detail,
+    status: statusForStage(staged.code),
+  };
+}
+
+/** Classify save-path failures without remapping Prisma errors to Gemini stages. */
+export function classifySaveError(error: unknown): StageError {
+  if (error instanceof StageError) return error;
+
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+
+  if (lower.includes('unauthorized') || lower.includes('not signed in')) {
+    return new StageError('auth', 'Unauthorized', message);
+  }
+  if (lower.includes('invalid calendar date') || lower.includes('required')) {
+    return new StageError('validate', message || 'Invalid save payload', message);
+  }
+  if (
+    lower.includes('timeout') ||
+    lower.includes('timed out') ||
+    lower.includes('deadline') ||
+    lower.includes('etimedout')
+  ) {
+    return new StageError('timeout', 'Save timed out during persist', message);
+  }
+
+  return new StageError('persist', 'Failed to save entry', message);
+}
+
+export function saveErrorPayload(error: unknown) {
+  const staged = classifySaveError(error);
   return {
     error: staged.message,
     code: staged.code,

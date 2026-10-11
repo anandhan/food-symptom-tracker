@@ -10,6 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDate, formatDateISO } from '@/lib/utils';
 import { calendarDateFromUnknown, datesMismatch } from '@/lib/dates';
+import {
+  SAVE_TIMEOUT_MS,
+  clientSaveTimeoutError,
+  fetchWithTimeout,
+  formatSaveError,
+  isAbortError,
+} from '@/lib/entries/save-client';
 import { ImageUploader } from './image-uploader';
 import { FoodList } from './food-list';
 import { SymptomInput } from './symptom-input';
@@ -47,6 +54,7 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
   const [diarrhea, setDiarrhea] = useState(false);
   const [constipation, setConstipation] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [dailyEntryId, setDailyEntryId] = useState<string | null>(existingEntry?.id || null);
   const [extractedDate, setExtractedDate] = useState<string | null>(null);
   const [showDateWarning, setShowDateWarning] = useState(false);
@@ -145,38 +153,47 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
   // Save entry
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
-      const response = await fetch('/api/entries/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dailyEntryId,
-          date,
-          meals,
-          symptomNotes,
-          overallRating,
-          bloating,
-          gas,
-          crampsPain,
-          diarrhea,
-          constipation,
-        }),
-      });
+      const response = await fetchWithTimeout(
+        '/api/entries/save',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dailyEntryId,
+            date,
+            meals,
+            symptomNotes,
+            overallRating,
+            bloating,
+            gas,
+            crampsPain,
+            diarrhea,
+            constipation,
+          }),
+        },
+        SAVE_TIMEOUT_MS
+      );
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error('Failed to save entry');
+        throw new Error(formatSaveError(data, 'Failed to save entry'));
       }
 
-      const data = await response.json();
       setDailyEntryId(data.dailyEntryId);
-
-      // Show success and redirect to dashboard
       alert('Entry saved successfully!');
       router.push('/');
       router.refresh();
     } catch (error) {
       console.error('Save failed:', error);
-      alert('Failed to save entry. Please try again.');
+      const message = isAbortError(error)
+        ? clientSaveTimeoutError()
+        : error instanceof Error
+          ? error.message
+          : formatSaveError({ code: 'save', error: 'Failed to save entry' });
+      setSaveError(message);
+      alert(message);
     } finally {
       setIsSaving(false);
     }
@@ -292,6 +309,11 @@ export function EntryForm({ userId, selectedDate, existingEntry }: EntryFormProp
           >
             {isSaving ? 'Saving...' : 'Save Entry'}
           </Button>
+          {saveError && (
+            <p className="text-sm text-red-600 text-center mt-2" data-testid="save-error">
+              {saveError}
+            </p>
+          )}
           {!hasFoodData && !symptomNotes && (
             <p className="text-sm text-muted-foreground text-center mt-2">
               Add at least one food item or symptom note to save

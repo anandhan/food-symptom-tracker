@@ -62,30 +62,57 @@ export function inferConceptNames(foodText: string, brand?: string): string[] {
 export async function upsertConceptsByName(
   names: Array<{ name: string; confidence?: number }>
 ): Promise<NormalizationResult['concepts']> {
-  const concepts = [];
-  for (const { name, confidence } of names) {
-    const canonical = name.trim().toLowerCase();
-    if (!canonical) continue;
-    const concept = await prisma.foodConcept.upsert({
-      where: { name: canonical },
-      update: {},
-      create: {
-        name: canonical,
-        aliases: JSON.stringify([canonical]),
-        isActive: true,
-      },
-    });
-    const resolved = concept.mergedIntoId
-      ? await prisma.foodConcept.findUnique({ where: { id: concept.mergedIntoId } })
-      : concept;
-    const target = resolved && resolved.isActive ? resolved : concept;
-    concepts.push({
-      conceptId: target.id,
-      conceptName: target.name,
+  const requested = names
+    .map(({ name, confidence }) => ({
+      name: name.trim().toLowerCase(),
       confidence: confidence ?? 0.85,
+    }))
+    .filter((row) => row.name);
+  if (requested.length === 0) return [];
+
+  const uniqueNames = [...new Set(requested.map((row) => row.name))];
+  const existing = await prisma.foodConcept.findMany({
+    where: { name: { in: uniqueNames } },
+  });
+  const have = new Set(existing.map((row) => row.name));
+  const missing = uniqueNames.filter((name) => !have.has(name));
+  if (missing.length > 0) {
+    await prisma.foodConcept.createMany({
+      data: missing.map((name) => ({
+        name,
+        aliases: JSON.stringify([name]),
+        isActive: true,
+      })),
+      skipDuplicates: true,
     });
   }
-  return concepts;
+
+  const all = await prisma.foodConcept.findMany({
+    where: { name: { in: uniqueNames } },
+  });
+  const mergeIds = [...new Set(all.map((row) => row.mergedIntoId).filter(Boolean))] as string[];
+  const merged = mergeIds.length
+    ? await prisma.foodConcept.findMany({ where: { id: { in: mergeIds } } })
+    : [];
+  const byId = new Map([...all, ...merged].map((row) => [row.id, row]));
+
+  const byName = new Map<string, NormalizationResult['concepts'][number]>();
+  for (const concept of all) {
+    const resolved = concept.mergedIntoId ? byId.get(concept.mergedIntoId) : concept;
+    const target = resolved && resolved.isActive ? resolved : concept;
+    byName.set(concept.name, {
+      conceptId: target.id,
+      conceptName: target.name,
+      confidence: 0.85,
+    });
+  }
+
+  return requested
+    .map((row) => {
+      const concept = byName.get(row.name);
+      return concept ? { ...concept, confidence: row.confidence } : null;
+    })
+    .filter((row): row is NormalizationResult['concepts'][number] => Boolean(row));
 }
 
 async function geminiConceptNames(foodText: string, brand?: string): Promise<string[]> {
@@ -111,52 +138,128 @@ Return JSON: {"concepts":[{"name":"coffee","confidence":0.95}]}`,
   }
 }
 
+export type NormalizeOptions = {
+  /** Gemini is opt-in for background/cron work. Save persist never sets this. */
+  useGemini?: boolean;
+};
+
+function conceptNamesForItem(foodText: string, brand?: string): string[] {
+  const fromRules = inferConceptNames(foodText, brand);
+  const fallback = foodText.split(',')[0].trim().toLowerCase();
+  const names = fromRules.length > 0 ? fromRules : fallback ? [fallback] : [];
+  return [...new Set(names)];
+}
+
 export async function normalizeFoodItem(
   foodText: string,
-  brand?: string
+  brand?: string,
+  options?: NormalizeOptions
 ): Promise<NormalizationResult> {
   const fromRules = inferConceptNames(foodText, brand);
-  const fromGemini = await geminiConceptNames(foodText, brand);
+  const fromGemini = options?.useGemini === false ? [] : await geminiConceptNames(foodText, brand);
   const merged = [...new Set([...fromRules, ...fromGemini])];
   const names = (merged.length > 0 ? merged : [foodText.split(',')[0].trim().toLowerCase()]).filter(Boolean);
   const concepts = await upsertConceptsByName(names.map((name) => ({ name, confidence: 0.85 })));
   return { concepts };
 }
 
+export async function linkFoodItemsBatch(
+  items: Array<{ id: string; rawText: string; brand?: string | null }>,
+  options?: NormalizeOptions
+): Promise<{ items: number; links: number }> {
+  if (items.length === 0) return { items: 0, links: 0 };
+
+  const perItem: Array<{ id: string; names: string[] }> = [];
+  for (const item of items) {
+    let names = conceptNamesForItem(item.rawText, item.brand || undefined);
+    if (options?.useGemini) {
+      const fromGemini = await geminiConceptNames(item.rawText, item.brand || undefined);
+      names = [...new Set([...names, ...fromGemini])];
+    }
+    perItem.push({ id: item.id, names });
+  }
+
+  const uniqueNames = [...new Set(perItem.flatMap((row) => row.names))];
+  const concepts = await upsertConceptsByName(uniqueNames.map((name) => ({ name })));
+  const byName = new Map(
+    uniqueNames
+      .map((name, index) => [name, concepts[index]] as const)
+      .filter((row): row is readonly [string, (typeof concepts)[number]] => Boolean(row[1]))
+  );
+
+  const links = [];
+  for (const item of perItem) {
+    for (const name of item.names) {
+      const concept = byName.get(name);
+      if (!concept) continue;
+      links.push({
+        foodItemId: item.id,
+        foodConceptId: concept.conceptId,
+        confidence: concept.confidence,
+        assignedBy: 'ai' as const,
+      });
+    }
+  }
+
+  if (links.length > 0) {
+    await prisma.foodItemConcept.createMany({
+      data: links,
+      skipDuplicates: true,
+    });
+  }
+
+  return { items: items.length, links: links.length };
+}
+
+export async function linkFoodItemsByIds(
+  foodItemIds: string[],
+  options?: NormalizeOptions
+): Promise<{ items: number; links: number }> {
+  if (foodItemIds.length === 0) return { items: 0, links: 0 };
+  const items = await prisma.foodItem.findMany({
+    where: { id: { in: foodItemIds } },
+    select: { id: true, rawText: true, brand: true },
+  });
+  return linkFoodItemsBatch(items, options);
+}
+
 export async function linkFoodItemConcepts(
   foodItemId: string,
   foodText: string,
-  brand?: string | null
+  brand?: string | null,
+  options?: NormalizeOptions
 ): Promise<NormalizationResult> {
-  const result = await normalizeFoodItem(foodText, brand || undefined);
-  for (const concept of result.concepts) {
-    await prisma.foodItemConcept.upsert({
-      where: {
-        foodItemId_foodConceptId: {
-          foodItemId,
-          foodConceptId: concept.conceptId,
-        },
-      },
-      update: { confidence: concept.confidence },
-      create: {
+  const result = await normalizeFoodItem(foodText, brand || undefined, options);
+  if (result.concepts.length > 0) {
+    await prisma.foodItemConcept.createMany({
+      data: result.concepts.map((concept) => ({
         foodItemId,
         foodConceptId: concept.conceptId,
         confidence: concept.confidence,
         assignedBy: 'ai',
-      },
+      })),
+      skipDuplicates: true,
     });
   }
   return result;
 }
 
-export async function backfillAllFoodItemConcepts(): Promise<{ items: number; links: number }> {
+export async function linkUnlinkedFoodItemConcepts(
+  options?: NormalizeOptions & { limit?: number }
+): Promise<{ items: number; links: number }> {
+  const items = await prisma.foodItem.findMany({
+    where: { foodItemConcepts: { none: {} } },
+    select: { id: true, rawText: true, brand: true },
+    take: options?.limit ?? 200,
+  });
+  return linkFoodItemsBatch(items, { useGemini: options?.useGemini === true });
+}
+
+export async function backfillAllFoodItemConcepts(
+  options?: NormalizeOptions
+): Promise<{ items: number; links: number }> {
   const items = await prisma.foodItem.findMany({
     select: { id: true, rawText: true, brand: true },
   });
-  let links = 0;
-  for (const item of items) {
-    const result = await linkFoodItemConcepts(item.id, item.rawText, item.brand);
-    links += result.concepts.length;
-  }
-  return { items: items.length, links };
+  return linkFoodItemsBatch(items, options);
 }

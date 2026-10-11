@@ -65,8 +65,10 @@ npm install
 Copy `.env.example` to `.env.local` and fill in:
 
 ```bash
-# Database
-DATABASE_URL=postgresql://localhost:5432/food_tracker_dev
+# Database (local Postgres, or Neon/Vercel pooled URL)
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/food_tracker_build
+# On Vercel, set DATABASE_URL=${POSTGRES_PRISMA_URL} (pooled). Unpooled Neon
+# hosts are rewritten to the -pooler endpoint at runtime.
 
 # NextAuth
 NEXTAUTH_URL=http://localhost:3000
@@ -146,6 +148,8 @@ Open [http://localhost:3000](http://localhost:3000).
    GEMINI_EXTRACTION_MODEL=gemini-3.8-flash
    GEMINI_ANALYSIS_MODEL=gemini-3.8-flash
    DATABASE_URL=${POSTGRES_PRISMA_URL}
+   # Pooled Prisma URL is required on Neon/Vercel. Unpooled DATABASE_URL is
+   # rewritten to the -pooler host and opened via @prisma/adapter-neon.
    TIMEZONE=America/New_York
    CRON_SECRET=<random-string>
    ADMIN_USERNAME=<your-username>
@@ -276,6 +280,9 @@ Set `VISION_PROVIDER=mock` to test without Gemini:
 
 ### Test Fixture
 `tests/fixtures/myfitnesspal-example.png` - Sample MyFitnessPal screenshot for testing extraction
+
+### Saving
+The entry Save button persists raw meals and symptoms in one Postgres transaction (target <2s). Gemini concept linking and analysis are not part of that request — they run via `after()` and the weekly cron. A retry after a 25s client timeout replaces meals for that date/slot instead of duplicating them.
 
 ## Cost Expectations
 

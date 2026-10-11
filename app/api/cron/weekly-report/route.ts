@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { analyzeFoodSymptomCorrelations } from '@/lib/analysis/correlation-engine';
+import { linkUnlinkedFoodItemConcepts } from '@/lib/ai/food-normalization';
 import {
   addCalendarDays,
   getCalendarDateInTimezone,
@@ -28,6 +29,14 @@ export async function POST(request: NextRequest) {
         { error: 'Unauthorized' },
         { status: 401 }
       );
+    }
+
+    try {
+      console.time('cron:concepts');
+      await linkUnlinkedFoodItemConcepts({ useGemini: false, limit: 200 });
+      console.timeEnd('cron:concepts');
+    } catch (error) {
+      console.error('Cron concept backfill failed:', error);
     }
 
     // Get all users

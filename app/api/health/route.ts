@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthorizedSession } from '@/lib/auth';
 import { generateContentWithFallback, resolveGeminiModel } from '@/lib/ai/gemini-model';
+import { getDatabaseConnectionInfo, prisma } from '@/lib/db';
 
 export const maxDuration = 30;
 
@@ -13,7 +14,21 @@ export async function GET() {
     );
   }
 
-  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL);
+  const dbInfo = getDatabaseConnectionInfo();
+  let db: { ok: boolean; latencyMs: number; error?: string } & typeof dbInfo;
+  const dbStarted = Date.now();
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    db = { ok: true, latencyMs: Date.now() - dbStarted, ...dbInfo };
+  } catch (error) {
+    db = {
+      ok: false,
+      latencyMs: Date.now() - dbStarted,
+      error: error instanceof Error ? error.message : 'Database ping failed',
+      ...dbInfo,
+    };
+  }
   const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
   const geminiModel = resolveGeminiModel(process.env.GEMINI_EXTRACTION_MODEL);
@@ -43,5 +58,6 @@ export async function GET() {
     hasGeminiKey,
     geminiModel,
     gemini,
+    db,
   });
 }

@@ -1,18 +1,27 @@
-// API endpoint to save a complete daily entry with meals and symptoms
-
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getAuthorizedSession } from '@/lib/auth';
-import { prisma } from '@/lib/db';
-import { linkFoodItemConcepts, isDrink } from '@/lib/ai/food-normalization';
+import { persistDailyEntry } from '@/lib/entries/save-entry';
+import { linkFoodItemsByIds } from '@/lib/ai/food-normalization';
 import { parseCalendarDate } from '@/lib/dates';
+import { saveErrorPayload, StageError } from '@/lib/ai/extraction-errors';
+
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  console.time('save:total');
   try {
+    console.time('save:auth');
     const session = await getAuthorizedSession();
+    console.timeEnd('save:auth');
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'auth', detail: 'Not signed in' },
+        { status: 401 }
+      );
     }
 
+    console.time('save:parse');
     const body = await request.json();
     const {
       dailyEntryId,
@@ -27,114 +36,54 @@ export async function POST(request: NextRequest) {
       constipation,
     } = body;
 
-    const entryDate = parseCalendarDate(date);
-
-    // Create or get daily entry
-    let dailyEntry;
-    if (dailyEntryId) {
-      dailyEntry = await prisma.dailyEntry.findUnique({
-        where: { id: dailyEntryId },
-      });
-      
-      if (!dailyEntry || dailyEntry.userId !== session.userId) {
-        return NextResponse.json({ error: 'Invalid daily entry' }, { status: 403 });
-      }
-    } else {
-      dailyEntry = await prisma.dailyEntry.upsert({
-        where: {
-          userId_date: {
-            userId: session.userId,
-            date: entryDate,
-          },
-        },
-        update: {},
-        create: {
-          userId: session.userId,
-          date: entryDate,
-        },
-      });
+    if (!date || typeof date !== 'string') {
+      throw new StageError('validate', 'Date is required', 'body.date must be YYYY-MM-DD');
+    }
+    if (!meals || typeof meals !== 'object') {
+      throw new StageError('validate', 'Meals are required', 'body.meals must be an object');
     }
 
-    // Delete existing meals to replace them
-    await prisma.meal.deleteMany({
-      where: { dailyEntryId: dailyEntry.id },
+    const entryDate = parseCalendarDate(date);
+    console.timeEnd('save:parse');
+
+    const persisted = await persistDailyEntry({
+      userId: session.userId,
+      dailyEntryId,
+      date: entryDate,
+      meals,
+      symptomNotes,
+      overallRating,
+      bloating,
+      gas,
+      crampsPain,
+      diarrhea,
+      constipation,
     });
 
-    // Save meals
-    for (const [mealType, foodItems] of Object.entries(meals)) {
-      if (!Array.isArray(foodItems) || foodItems.length === 0) continue;
-
-      const meal = await prisma.meal.create({
-        data: {
-          dailyEntryId: dailyEntry.id,
-          mealType,
-        },
-      });
-
-      // Save food items
-      for (let i = 0; i < foodItems.length; i++) {
-        const item: any = foodItems[i];
-        
-        // Detect if it's a drink
-        const itemIsDrink = item.is_drink ?? isDrink(item.text);
-
-        const foodItem = await prisma.foodItem.create({
-          data: {
-            mealId: meal.id,
-            rawText: item.text,
-            brand: item.brand || null,
-            foodName: item.food_name || null,
-            quantity: item.quantity || null,
-            isDrink: itemIsDrink,
-            calories: item.calories || null,
-            carbs: item.carbs || null,
-            fat: item.fat || null,
-            protein: item.protein || null,
-            fiber: item.fiber || null,
-            sugar: item.sugar || null,
-            orderIndex: i,
-          },
-        });
-
-        await linkFoodItemConcepts(foodItem.id, item.text, item.brand);
+    after(async () => {
+      console.time('save:concepts');
+      try {
+        await linkFoodItemsByIds(persisted.foodItemIds, { useGemini: false });
+      } catch (error) {
+        console.error('Background concept linking failed:', error);
+      } finally {
+        console.timeEnd('save:concepts');
       }
-    }
+    });
 
-    // Save or update symptom record
-    if (symptomNotes) {
-      await prisma.symptomRecord.upsert({
-        where: { dailyEntryId: dailyEntry.id },
-        update: {
-          freeTextNotes: symptomNotes,
-          overallRating: overallRating || null,
-          bloating: bloating || null,
-          gas: gas || null,
-          crampsPain: crampsPain || null,
-          diarrhea: diarrhea || false,
-          constipation: constipation || false,
-        },
-        create: {
-          dailyEntryId: dailyEntry.id,
-          freeTextNotes: symptomNotes,
-          overallRating: overallRating || null,
-          bloating: bloating || null,
-          gas: gas || null,
-          crampsPain: crampsPain || null,
-          diarrhea: diarrhea || false,
-          constipation: constipation || false,
-        },
-      });
-    }
-
-    return NextResponse.json({ 
-      success: true, 
-      dailyEntryId: dailyEntry.id 
+    console.timeEnd('save:total');
+    return NextResponse.json({
+      success: true,
+      dailyEntryId: persisted.dailyEntryId,
+      stage: 'persist',
     });
   } catch (error) {
+    console.timeEnd('save:total');
     console.error('Save entry error:', error);
+    const payload = saveErrorPayload(error);
     return NextResponse.json(
-      { error: 'Failed to save entry', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { error: payload.error, code: payload.code, detail: payload.detail, stage: payload.code },
+      { status: payload.status }
     );
   }
 }
